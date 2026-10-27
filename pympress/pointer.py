@@ -49,8 +49,9 @@ class PointerMode(enum.Enum):
 class Pointer(object):
     """ Manage and draw the software “laser pointer” to point at the slide.
 
-    Displays a pointer of chosen color on the current slide (in both windows), either on all the time or only when
-    clicking while ctrl pressed.
+    Displays a pointer of chosen color on the current slide in both windows.
+    Manual mode uses a left-button hold on the presenter preview, or Ctrl and
+    the left button on the content slide.
 
     Args:
         config (:class:`~pympress.config.Config`): A config object containing preferences
@@ -64,8 +65,8 @@ class Pointer(object):
     show_pointer = False
     #: :class:`~pympress.pointer.PointerMode` indicating the pointer mode
     pointer_mode = PointerMode.MANUAL
-    #: The :class:`~pympress.pointer.PointerMode` to which we toggle back
-    old_pointer_mode = PointerMode.CONTINUOUS
+    #: Drawing area that owns the current manual left-button hold.
+    _manual_pointer_widget = None
     #: A reference to the UI's :class:`~pympress.config.Config`, to update the pointer preference
     config = None
     #: :class:`~Gtk.DrawingArea` Slide in the Presenter window, used to reliably set cursors.
@@ -148,11 +149,12 @@ class Pointer(object):
         if mode == self.pointer_mode:
             return
         elif mode is not None:
-            self.old_pointer_mode, self.pointer_mode = self.pointer_mode, mode
+            self.pointer_mode = mode
             self.config.set('presenter', 'pointer_mode', self.pointer_mode.name.lower())
 
 
         # Set mouse pointer and cursors on/off, if windows are already mapped
+        self._manual_pointer_widget = None
         self.show_pointer = False
         for slide_widget in [self.p_da_cur, self.c_da]:
             ww, wh = slide_widget.get_allocated_width(), slide_widget.get_allocated_height()
@@ -185,7 +187,7 @@ class Pointer(object):
             target (:class:`~GLib.Variant`): The selected mode
         """
         if target is None or target.get_string() == 'toggle':
-            mode = self.old_pointer_mode if self.pointer_mode == PointerMode.CONTINUOUS else PointerMode.CONTINUOUS
+            mode = PointerMode.MANUAL if self.pointer_mode == PointerMode.CONTINUOUS else PointerMode.CONTINUOUS
         else:
             mode = PointerMode[target.get_string().upper()]
         self.activate_pointermode(mode)
@@ -218,10 +220,16 @@ class Pointer(object):
         Returns:
             `bool`: whether the event was consumed
         """
+        if widget not in (self.p_da_cur, self.c_da):
+            return False
+        if self.pointer_mode == PointerMode.MANUAL and widget is not self._manual_pointer_widget:
+            return False
         if self.show_pointer:
             ww, wh = widget.get_allocated_width(), widget.get_allocated_height()
+            if ww <= 0 or wh <= 0:
+                return False
             ex, ey = event.get_coords()
-            self.pointer_pos = (ex / ww, ey / wh)
+            self.pointer_pos = (min(1., max(0., ex / ww)), min(1., max(0., ey / wh)))
             self.redraw_current_slide()
             return True
 
@@ -243,18 +251,37 @@ class Pointer(object):
         Returns:
             `bool`: whether the event was consumed
         """
-        # Only handle enter/leave events on one of the current slides
-        if self.pointer_mode != PointerMode.CONTINUOUS or widget not in [self.c_da, self.p_da_cur]:
+        # Leaving the manual source cancels the hold, including when a window
+        # loses the pointer before a button-release event can reach it.
+        if (self.pointer_mode == PointerMode.MANUAL and widget is self._manual_pointer_widget and
+                event.type == Gdk.EventType.LEAVE_NOTIFY):
+            return self.cancel_manual_pointer()
+
+        # Only handle enter/leave events on one of the current slides.
+        if self.pointer_mode != PointerMode.CONTINUOUS or widget not in (self.c_da, self.p_da_cur):
             return False
 
         if event.type == Gdk.EventType.ENTER_NOTIFY:
             self.show_pointer = True
             extras.Cursor.set_cursor(widget, 'invisible')
+            return self.track_pointer(widget, event)
 
         elif event.type == Gdk.EventType.LEAVE_NOTIFY:
             self.show_pointer = False
             extras.Cursor.set_cursor(widget, 'parent')
 
+        self.redraw_current_slide()
+        return True
+
+
+    def cancel_manual_pointer(self, *args):
+        """Hide a manual hold on release, leave, or loss of the presenting window."""
+        source = self._manual_pointer_widget
+        if source is None:
+            return False
+        self._manual_pointer_widget = None
+        self.show_pointer = False
+        extras.Cursor.set_cursor(source, 'parent')
         self.redraw_current_slide()
         return True
 
@@ -269,23 +296,23 @@ class Pointer(object):
         Returns:
             `bool`: whether the event was consumed
         """
-        if self.pointer_mode in {PointerMode.DISABLED, PointerMode.CONTINUOUS}:
+        if self.pointer_mode != PointerMode.MANUAL:
             return False
 
-        ctrl_pressed = event.get_state() & Gdk.ModifierType.CONTROL_MASK
+        if event.type == Gdk.EventType.BUTTON_RELEASE and event.button == 1:
+            return self.cancel_manual_pointer()
 
-        if ctrl_pressed and event.type == Gdk.EventType.BUTTON_PRESS:
+        ctrl_pressed = event.get_state() & Gdk.ModifierType.CONTROL_MASK
+        manual_source = widget is self.p_da_cur or (widget is self.c_da and ctrl_pressed)
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1 and manual_source:
+            if widget.get_allocated_width() <= 0 or widget.get_allocated_height() <= 0:
+                return False
+            self._manual_pointer_widget = widget
             self.show_pointer = True
             extras.Cursor.set_cursor(widget, 'invisible')
 
             # Immediately place & draw the pointer
             return self.track_pointer(widget, event)
-
-        elif self.show_pointer and event.type == Gdk.EventType.BUTTON_RELEASE:
-            self.show_pointer = False
-            extras.Cursor.set_cursor(widget, 'parent')
-            self.redraw_current_slide()
-            return True
 
         else:
             return False

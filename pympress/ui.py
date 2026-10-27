@@ -297,6 +297,9 @@ class UI(builder.Builder):
         self.connect_signals(self)
         self.c_win.connect('window-state-event', self.on_window_state_event)
         self.p_win.connect('window-state-event', self.on_window_state_event)
+        for window in (self.c_win, self.p_win):
+            window.connect('focus-out-event', self.laser.cancel_manual_pointer)
+            window.connect('unmap', self.laser.cancel_manual_pointer)
 
         for action, shortcut_list in self.config.shortcuts.items():
             if action == 'highlight-hold-to-erase':
@@ -826,6 +829,8 @@ class UI(builder.Builder):
             return False
 
         previous_image = self.image_document
+        if hasattr(getattr(self, 'laser', None), 'cancel_manual_pointer'):
+            self.laser.cancel_manual_pointer()
         self.doc = new_doc
         self.image_document = prepared
         self.source_uri = doc_uri
@@ -1729,6 +1734,8 @@ class UI(builder.Builder):
         Returns:
             `bool`: whether the event was consumed
         """
+        if event.type == Gdk.EventType.BUTTON_RELEASE and self.laser.toggle_pointer(widget, event):
+            return True
         if self.zoom.toggle_zoom_target(widget, event):
             return True
         elif self.scribbler.toggle_scribble(widget, event):
