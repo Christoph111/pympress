@@ -286,6 +286,8 @@ class UI(builder.Builder):
         self.make_pwin()
 
         self.connect_signals(self)
+        self.c_win.connect('window-state-event', self.on_window_state_event)
+        self.p_win.connect('window-state-event', self.on_window_state_event)
 
         for action, shortcut_list in self.config.shortcuts.items():
             if action == 'highlight-hold-to-erase':
@@ -1419,6 +1421,8 @@ class UI(builder.Builder):
             widget (:class:`~Gtk.Widget`):  the widget which has received the key stroke
             event (:class:`~Gdk.Event`):  the GTK event, which contains the key stroke details
         """
+        if event.keyval == Gdk.KEY_Escape:
+            return self.cancel_current_input(None) if event.type == Gdk.EventType.KEY_PRESS else True
         if self.annotations.key_event(widget, event):
             return True
         elif self.scribbler.key_event(widget, event):
@@ -1449,7 +1453,7 @@ class UI(builder.Builder):
         elif self.autoplay.stop_looping():
             return True
 
-        return False
+        return self.exit_fullscreen()
 
 
     def on_scroll(self, widget, event):
@@ -1618,9 +1622,10 @@ class UI(builder.Builder):
             logger.error(_("Unknow widget {} to be fullscreened, aborting.").format(widget))
             return False
 
-        toggle_to = not gaction.get_state().get_boolean()
         window = widget.get_window()
-        cur_state = (window.get_state() & Gdk.WindowState.FULLSCREEN) if window is not None else False
+        cur_state = (bool(window.get_state() & Gdk.WindowState.FULLSCREEN) if window is not None
+                     else gaction.get_state().get_boolean())
+        toggle_to = not cur_state
 
         if cur_state:
             widget.unfullscreen()
@@ -1927,6 +1932,33 @@ class UI(builder.Builder):
 
         self.config.set('presenter', 'show_bigbuttons', 'on' if self.show_bigbuttons else 'off')
         self.app.set_action_state('big-buttons', self.show_bigbuttons)
+
+
+    def exit_fullscreen(self):
+        """Exit native or pending fullscreen requests in both presentation windows."""
+        changed = False
+        for widget, name in ((self.c_win, 'content-fullscreen'), (self.p_win, 'presenter-fullscreen')):
+            native = widget.get_window()
+            fullscreen = native is not None and native.get_state() & Gdk.WindowState.FULLSCREEN
+            if fullscreen or self.app.get_action_state(name):
+                widget.unfullscreen()
+                self.app.set_action_state(name, False)
+                if widget is self.c_win:
+                    self.set_screensaver(disabled=False)
+                changed = True
+        return changed
+
+
+    def on_window_state_event(self, widget, event):
+        """Keep fullscreen actions and screensaver inhibition in sync with GTK."""
+        if event.changed_mask & Gdk.WindowState.FULLSCREEN:
+            name = 'content-fullscreen' if widget is self.c_win else 'presenter-fullscreen'
+            fullscreen = bool(event.new_window_state & Gdk.WindowState.FULLSCREEN)
+            previous = self.app.get_action_state(name)
+            self.app.set_action_state(name, fullscreen)
+            if widget is self.c_win and previous != fullscreen:
+                self.set_screensaver(disabled=fullscreen)
+        return False
 
 
 ##
