@@ -57,3 +57,40 @@ Open **Playback**, then:
 Unapplied changes remain available when the active file changes. **Apply** edits the file originally selected for editing; **Discard** reloads settings for the file that is now active.
 
 Crossfades affect the audience's Content window. The Presenter preview immediately shows the new slide so that the operator can see the selection. If resource limits prevent a crossfade, the transition falls back to a cut.
+
+## Output modes and video backgrounds
+
+Open **Output** in the Presenter toolbar, **Presentation → Output settings…**, or
+**Primary+Shift+O**. Select a **Display**, choose a mode, then select **Apply and show**:
+
+- **Window** displays the ordinary audience window with its title bar.
+- **Fullscreen** uses the operating system's native fullscreen mode.
+- **Borderless overlay** covers the selected display without a title bar or a native
+  fullscreen/Space transition. It fades the entire audience window over whatever is
+  underneath, for example a background video running in another application.
+
+**Overlay fade** sets the full-range fade time from **0 to 5 seconds**, independently
+of slide and file crossfades. The output is fully opaque when shown and fully hidden
+when faded out; there is no persistent partial-opacity mode. Reversing an unfinished
+fade continues from its current opacity at the same speed. **Show** and **Fade out**
+operate on the applied configuration; choosing a different mode or display remains a
+draft until **Apply and show**.
+
+In the Presenter or Content window, **F10** or **Show / hide** toggles output. In overlay
+mode, the ordinary content-fullscreen key (**F**) also toggles output instead of entering
+a native fullscreen Space. **Escape** retains its input/drawing cancellation priority,
+then fades out a visible overlay; it keeps the selected overlay mode available for the
+next Show. Escape inside the Output settings window only closes those settings.
+
+On macOS, output uses public native window opacity and Space properties so it can
+accompany fullscreen applications. Application-owned windows disable automatic native
+tab grouping and retain independent placement. The overlay does not take operator focus.
+Keep the background video on the chosen display; verify the exact VLC/Spaces arrangement
+before a live presentation. A mapped native test validates the alpha endpoints and display
+coverage, but does not establish every external application's fullscreen behavior.
+
+The display selection and fade time are stored in the normal application configuration.
+A remembered overlay starts hidden. If its saved display is unavailable, choose an available
+display explicitly; output does not automatically move onto the remaining operator display.
+Disconnecting an active output display hides output immediately. Wayland cannot supply the
+required per-window positioning/opacity; X11 requires desktop compositing.
