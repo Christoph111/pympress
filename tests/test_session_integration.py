@@ -112,7 +112,7 @@ class Fade:
         self.timeline.resume()
 
 
-def load_ui(source):
+def load_ui(source, extra_methods=()):
     sys.path.insert(0, str(source))
     filelist = importlib.import_module('pympress.filelist')
     playback = importlib.import_module('pympress.playback')
@@ -124,7 +124,8 @@ def load_ui(source):
              'playback_stop', 'playback_settings_changed', '_advance_playback', '_prepare_transition',
              'file_list_activate', 'file_list_next', 'file_list_previous', 'goto_page', 'doc_goto_next',
              'doc_goto_prev', 'do_page_change', 'cancel_current_input', 'exit_fullscreen',
-             '_request_fullscreen', '_fullscreen_pending_target'}
+             '_request_fullscreen', '_fullscreen_pending_target', '_next_file_index'}
+    names.update(extra_methods)
     methods = [node for node in ui.body if isinstance(node, ast.FunctionDef) and node.name in names]
     selected = ast.Module(body=[ast.ClassDef(name='SessionUI', bases=[], keywords=[], body=methods,
                                              decorator_list=[])], type_ignores=[])
@@ -134,7 +135,7 @@ def load_ui(source):
     return namespace['SessionUI'], filelist, playback.PlaybackController, transitions.FadeTimeline
 
 
-class SessionIntegrationTests(unittest.TestCase):
+class SessionFixture(unittest.TestCase):
     ui_class = filelist = controller = timeline_class = None
 
     def setUp(self):
@@ -181,6 +182,7 @@ class SessionIntegrationTests(unittest.TestCase):
         ui.talk_time = Clock()
         ui.timing = types.SimpleNamespace(transition=mock.Mock())
         ui._refresh_file_list = mock.Mock()
+        ui._refresh_next_preview = mock.Mock()
         ui.file_list_error = mock.Mock()
         ui.show_file_list = mock.Mock()
         ui.reject_open = False
@@ -199,6 +201,8 @@ class SessionIntegrationTests(unittest.TestCase):
         ui.playback = self.controller(self.scheduler.schedule, self.scheduler.cancel, ui._advance_playback,
                                       clock=lambda: self.scheduler.now, on_change=ui._playback_state_changed)
 
+
+class SessionIntegrationTests(SessionFixture):
     def test_start_pause_resume_updates_timer_and_talk_clock_together(self):
         self.assertTrue(self.ui.playback_toggle())
         self.assertTrue(self.ui.playback.running)

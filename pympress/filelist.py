@@ -24,6 +24,7 @@ LIST_FORMAT = 'pympress-file-list'
 DEFAULT_SLIDE_SECONDS = 5.0
 MAX_PAGE_OVERRIDES = 10000
 MAX_PAGE_INDEX = 1000000
+_UNCHANGED = object()
 
 
 class FileListError(ValueError):
@@ -53,6 +54,12 @@ def _page_seconds(value):
             raise FileListError(_('Page timing indices must be non-negative whole numbers.'))
         result[page] = validate_slide_seconds(seconds)
     return types.MappingProxyType(result)
+
+
+def _validate_continuation(value):
+    if value is not None and type(value) is not bool:
+        raise FileListError(_('The continuation setting must be enabled, disabled, or inherited.'))
+    return value
 
 
 def _reject_json_constant(value):
@@ -156,33 +163,39 @@ def decode_drop(data, uri_list=False):
     return paths
 
 
-_FileEntryBase = collections.namedtuple('FileEntry', 'id path slide_seconds page_seconds transition_enabled')
+_FileEntryBase = collections.namedtuple(
+    'FileEntry', 'id path slide_seconds page_seconds transition_enabled continue_after')
 
 
 class FileEntry(_FileEntryBase):
     """Immutable validated settings without requiring the dataclasses module."""
     __slots__ = ()
 
-    def __new__(cls, id, path, slide_seconds=DEFAULT_SLIDE_SECONDS, page_seconds=None, transition_enabled=True):
+    def __new__(cls, id, path, slide_seconds=DEFAULT_SLIDE_SECONDS, page_seconds=None, transition_enabled=True,
+                continue_after=None):
         """Create an entry with validated, immutable slide timing settings."""
         slide_seconds = validate_slide_seconds(slide_seconds)
         page_seconds = _page_seconds({} if page_seconds is None else page_seconds)
         if type(transition_enabled) is not bool:
             raise FileListError(_('The transition setting must be enabled or disabled.'))
-        return super(FileEntry, cls).__new__(cls, id, path, slide_seconds, page_seconds, transition_enabled)
+        continue_after = _validate_continuation(continue_after)
+        return super(FileEntry, cls).__new__(
+            cls, id, path, slide_seconds, page_seconds, transition_enabled, continue_after)
 
-    def with_settings(self, slide_seconds=None, page_seconds=None, transition_enabled=None):
+    def with_settings(self, slide_seconds=None, page_seconds=None, transition_enabled=None, continue_after=_UNCHANGED):
         """Return a validated replacement while retaining the path and identity.
 
         Args:
             slide_seconds (float or None): New default duration, or keep it unchanged.
             page_seconds (Mapping or None): Zero-based overrides, or keep them unchanged.
             transition_enabled (bool or None): New transition flag, or keep it unchanged.
+            continue_after (bool or None): Override continuation, or None to inherit; omitted keeps it unchanged.
         """
         return type(self)(self.id, self.path,
                           self.slide_seconds if slide_seconds is None else slide_seconds,
                           self.page_seconds if page_seconds is None else page_seconds,
-                          self.transition_enabled if transition_enabled is None else transition_enabled)
+                          self.transition_enabled if transition_enabled is None else transition_enabled,
+                          self.continue_after if continue_after is _UNCHANGED else continue_after)
 
     def _replace(self, **settings):
         values = self._asdict()
@@ -198,7 +211,7 @@ class FileEntry(_FileEntryBase):
     def __hash__(self):
         """Hash all immutable settings, including per-page overrides."""
         return hash((self.id, self.path, self.slide_seconds,
-                     tuple(sorted(self.page_seconds.items())), self.transition_enabled))
+                     tuple(sorted(self.page_seconds.items())), self.transition_enabled, self.continue_after))
 
     def duration_for_page(self, page):
         """Return a zero-based page's override or the file's default duration."""
@@ -241,6 +254,7 @@ class FileList:
         self._transition_seconds = 0.5
         self._playback_mode = 'current'
         self._playback_loop = False
+        self._continue_by_default = True
 
     @property
     def transition_style(self):
@@ -261,6 +275,63 @@ class FileList:
     def playback_loop(self):
         """Return whether playback restarts after reaching its scope's end."""
         return self._playback_loop
+
+    @property
+    def continue_by_default(self):
+        """Return the continuation policy for entries without an override."""
+        return self._continue_by_default
+
+    def set_continuation(self, default_bool):
+        """Validate and update whether files normally continue to the next file."""
+        if type(default_bool) is not bool:
+            raise FileListError(_('The default continuation setting must be enabled or disabled.'))
+        self._continue_by_default = default_bool
+
+    def can_advance(self, entry=None):
+        """Return an entry's continuation policy, using the active entry if omitted.
+
+        An empty selection cannot advance. This policy does not indicate whether
+        the list contains a following entry.
+        """
+        if entry is None:
+            entry = self.current
+        if entry is None:
+            return False
+        if not isinstance(entry, FileEntry):
+            raise FileListError(_('The file entry is invalid.'))
+        return self._continue_by_default if entry.continue_after is None else entry.continue_after
+
+    def set_entry_continuation(self, indices, value):
+        """Atomically set selected entries' overrides, using None to inherit.
+
+        Args:
+            indices (iterable): Positions to update; repeated positions update once.
+            value (bool or None): Continue, stop, or inherit the global default.
+
+        Returns:
+            tuple: Updated entries in the first occurrence order of their indices.
+
+        Raises:
+            FileListError: A setting or position is invalid, or the batch is too large.
+        """
+        _validate_continuation(value)
+        try:
+            iterator = iter(indices)
+        except TypeError as error:
+            raise FileListError(_('No file is selected.')) from error
+        positions = []
+        seen = set()
+        for count, index in enumerate(iterator):
+            if count >= MAX_ENTRIES:
+                raise FileListError(_('A presentation can contain at most {} files.').format(MAX_ENTRIES))
+            self._check_index(index)
+            if index not in seen:
+                positions.append(index)
+                seen.add(index)
+        updated = tuple(self._entries[index].with_settings(continue_after=value) for index in positions)
+        for index, entry in zip(positions, updated):
+            self._entries[index] = entry
+        return updated
 
     def set_transition(self, style, seconds):
         """Validate and update the global cut/fade settings atomically."""
@@ -320,7 +391,8 @@ class FileList:
         self._entries.extend(additions)
         return additions
 
-    def update_settings(self, index, slide_seconds=None, page_seconds=None, transition_enabled=None):
+    def update_settings(self, index, slide_seconds=None, page_seconds=None, transition_enabled=None,
+                        continue_after=_UNCHANGED):
         """Replace timing settings while retaining this entry's stable identity."""
         self._check_index(index)
         settings = {}
@@ -330,6 +402,8 @@ class FileList:
             settings['page_seconds'] = page_seconds
         if transition_enabled is not None:
             settings['transition_enabled'] = transition_enabled
+        if continue_after is not _UNCHANGED:
+            settings['continue_after'] = continue_after
         updated = self._entries[index].with_settings(**settings)
         self._entries[index] = updated
         return updated
@@ -394,16 +468,17 @@ class FileList:
             page_seconds = {str(page): seconds for page, seconds in sorted(entry.page_seconds.items())}
             entries.append(dict(id=entry.id, path=reference, slide_seconds=entry.slide_seconds,
                                 page_seconds=page_seconds,
-                                transition_enabled=entry.transition_enabled))
+                                transition_enabled=entry.transition_enabled, continue_after=entry.continue_after))
         document = {
             'format': LIST_FORMAT,
-            'version': 2,
+            'version': 3,
             'current': self._current_index,
             'entries': entries,
             'transition_style': self._transition_style,
             'transition_seconds': self._transition_seconds,
             'playback_mode': self._playback_mode,
             'playback_loop': self._playback_loop,
+            'continue_by_default': self._continue_by_default,
         }
         payload = (json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode('utf-8')
         if len(payload) > MAX_LIST_BYTES:
@@ -442,23 +517,29 @@ class FileList:
                                   object_pairs_hook=_unique_json_object)
             version = document.get('version') if isinstance(document, dict) else None
             expected = {'format', 'version', 'current', 'entries'}
-            if type(version) is int and version == 2:
+            if type(version) is int and version in (2, 3):
                 expected |= {'transition_style', 'transition_seconds', 'playback_mode', 'playback_loop'}
+            if type(version) is int and version == 3:
+                expected.add('continue_by_default')
             if (not isinstance(document, dict) or
                     set(document) != expected or
                     document['format'] != LIST_FORMAT or
-                    type(version) is not int or version not in (1, 2) or
+                    type(version) is not int or version not in (1, 2, 3) or
                     not isinstance(document['entries'], list) or
                     len(document['entries']) > MAX_ENTRIES):
                 raise FileListError(_('This is not a supported Pympress file list.'))
             result = cls()
-            if version == 2:
+            if version in (2, 3):
                 result.set_transition(document['transition_style'], document['transition_seconds'])
                 result.set_playback(document['playback_mode'], document['playback_loop'])
+            if version == 3:
+                result.set_continuation(document['continue_by_default'])
             ids = set()
             for entry in document['entries']:
                 entry_keys = {'id', 'path'} if version == 1 else {
                     'id', 'path', 'slide_seconds', 'page_seconds', 'transition_enabled'}
+                if version == 3:
+                    entry_keys.add('continue_after')
                 if (not isinstance(entry, dict) or set(entry) != entry_keys or
                         not isinstance(entry['id'], str) or len(entry['id']) != 32 or
                         any(char not in '0123456789abcdef' for char in entry['id']) or
@@ -466,7 +547,7 @@ class FileList:
                     raise FileListError(_('The file list contains an invalid entry.'))
                 ids.add(entry['id'])
                 settings = {}
-                if version == 2:
+                if version in (2, 3):
                     raw_page_seconds = entry['page_seconds']
                     if not isinstance(raw_page_seconds, dict) or len(raw_page_seconds) > MAX_PAGE_OVERRIDES:
                         raise FileListError(_('The per-page timing settings are invalid or too large.'))
@@ -478,6 +559,8 @@ class FileList:
                         pages[int(key)] = seconds
                     settings = dict(slide_seconds=entry['slide_seconds'], page_seconds=pages,
                                     transition_enabled=entry['transition_enabled'])
+                if version == 3:
+                    settings['continue_after'] = entry['continue_after']
                 result._entries.append(FileEntry(entry['id'], local_path(entry['path'], source.parent, False),
                                                  **settings))
             current = document['current']

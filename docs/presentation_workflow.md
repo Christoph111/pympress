@@ -45,6 +45,25 @@ Use **Add files…**, paste local file paths with **Paste** or **Primary+V**, or
 
 Use **Move up** and **Move down** to arrange the presentation order. **Save list…** saves the order, file display times, individual slide timings, and playback settings together as JSON. **Load list…** restores a saved list; older list versions are still accepted. Missing files remain visible and are skipped during automatic playback. Playback stops on unreadable files or when unsaved PDF changes prevent moving to another file.
 
+**Continue to next file by default** sets what happens when Next reaches the last
+slide of a file. The **Next file** checkbox beside each filename shows its effective
+choice. Clicking it sets an individual override; select rows and choose **Reset to
+global** to make them follow the default again. Explicit **Next file** keyboard
+commands remain available regardless of these checkboxes. Both the default and
+individual choices are saved in the file list. Older lists retain continuation.
+
+At a file boundary, **Next slide** previews the first page of the next available
+file and displays its filename and page number. Turning continuation off clears
+that preview. With several next-slide fields, remaining pages of the current file
+are followed by pages of one upcoming file. PDF previews show the complete source
+page; image previews show the same image used during presentation. An unavailable
+preview is labelled accordingly. Previewing never activates the file or follows
+its PDF links.
+
+Automatic **Entire file list** playback also respects each file's continuation
+choice, including when looping. **Current file** playback stays within that file;
+its next preview follows the current-file loop setting while playback is active.
+
 ## Configure timing and transitions
 
 Open **Playback**, then:

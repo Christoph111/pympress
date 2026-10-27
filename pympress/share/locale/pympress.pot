@@ -207,6 +207,9 @@ msgstr ""
 msgid "Content fullscreen"
 msgstr ""
 
+msgid "Continue to next file by default"
+msgstr ""
+
 msgid "Contributors:"
 msgstr ""
 
@@ -282,6 +285,9 @@ msgid "Double-click a time to edit it. Clear the field to use the file default. 
 msgstr ""
 
 msgid "Drop PDFs and images here. Double-click to open the selected file."
+msgstr ""
+
+msgid "Each file’s Next file checkbox overrides this default. Use Reset to global to restore it."
 msgstr ""
 
 msgid "Edit groups, orientation, and size distribution"
@@ -508,6 +514,14 @@ msgid "Next file"
 msgstr ""
 
 msgid "Next file →"
+msgstr ""
+
+#, python-brace-format
+msgid "Next file: {name} · Preview unavailable"
+msgstr ""
+
+#, python-brace-format
+msgid "Next file: {name} · page {page}"
 msgstr ""
 
 msgid "Next slide"
@@ -780,6 +794,9 @@ msgstr ""
 msgid "Reset timer"
 msgstr ""
 
+msgid "Reset to global"
+msgstr ""
+
 msgid "Resume"
 msgstr ""
 
@@ -900,11 +917,17 @@ msgstr ""
 msgid "The clipboard contains no file paths."
 msgstr ""
 
+msgid "The continuation setting must be enabled, disabled, or inherited."
+msgstr ""
+
 #, python-brace-format
 msgid "The current file changed · draft still applies to “{}”"
 msgstr ""
 
 msgid "The current file changed · global changes are not yet applied"
+msgstr ""
+
+msgid "The default continuation setting must be enabled or disabled."
 msgstr ""
 
 msgid "The dropped data is not a list of filenames."
@@ -926,6 +949,9 @@ msgid "The estimated (intended) talk time in minutes"
 msgstr ""
 
 msgid "The file entry contains an unknown setting."
+msgstr ""
+
+msgid "The file entry is invalid."
 msgstr ""
 
 msgid "The file list contains a duplicate JSON field."
@@ -968,6 +994,9 @@ msgid "The image is too large (maximum 40 megapixels and 20,000 pixels per edge)
 msgstr ""
 
 msgid "The log is written to "
+msgstr ""
+
+msgid "The next file cannot be previewed."
 msgstr ""
 
 msgid "The open file was modified outside of pympress but you have made unsaved changes."
@@ -1111,6 +1140,9 @@ msgid "Unsupported link clicked. "
 msgstr ""
 
 msgid "Unzoom"
+msgstr ""
+
+msgid "Use the global next-file setting for the selected files"
 msgstr ""
 
 msgid "Use transitions for this file"

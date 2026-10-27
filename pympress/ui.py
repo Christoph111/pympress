@@ -44,12 +44,12 @@ from urllib.parse import urlsplit
 import gi
 import cairo
 gi.require_version('Gtk', '3.0')
-from gi.repository import GObject, Gtk, Gdk, GLib, GdkPixbuf, Gio
+from gi.repository import GObject, Gtk, Gdk, GLib, GdkPixbuf, Gio, Pango  # noqa: E402 (after require_version)
 
 
 from pympress import (
     document, surfacecache, util, pointer, scribble, deck, builder, talk_time, dialog, extras, editable_label,
-    filelist, image_document, playback, transitions, output
+    filelist, image_document, playback, transitions, output, nextfile_preview
 )
 
 
@@ -197,6 +197,8 @@ class UI(builder.Builder):
         self.transition = None
         self._opening_entry = None
         self._playback_advancing = False
+        self.next_file_preview = nextfile_preview.NextFilePreview()
+        self._next_preview_pages = []
         self.playback = playback.PlaybackController(self._schedule_playback, GLib.source_remove,
                                                     self._advance_playback, on_change=self._playback_state_changed)
 
@@ -438,6 +440,11 @@ class UI(builder.Builder):
 
         self.p_frames_next = [self.get_object('p_frame_next{}'.format(n)) for n in range(16)]
         self.p_das_next = [self.get_object('p_da_next{}'.format(n)) for n in range(16)]
+        self._next_frame_label_widgets = [frame.get_label_widget() for frame in self.p_frames_next]
+        self._next_frame_labels = [label.get_text() for label in self._next_frame_label_widgets]
+        for label in self._next_frame_label_widgets:
+            label.set_ellipsize(Pango.EllipsizeMode.END)
+            label.set_max_width_chars(48)
         self.reconfigure_next_frames(None, GLib.Variant.new_int64(self.config.getint('presenter', 'next_slide_count')))
 
         slide_type = self.notes_mode.complement()
@@ -477,6 +484,7 @@ class UI(builder.Builder):
         self.next_frames_count = n_frames
         self.app.set_action_state('next-frames', n_frames)
         self.config.set('presenter', 'next_slide_count', str(n_frames))
+        self._refresh_next_preview()
 
 
     def reflow_next_frames(self, n_frames=None):
@@ -821,6 +829,7 @@ class UI(builder.Builder):
         self.medias.hide_all()
 
         self.doc.cleanup_media_files()
+        self.next_file_preview.cleanup()
         if self.image_document is not None:
             self.image_document.cleanup()
         if self.file_list_window is not None:
@@ -1001,6 +1010,79 @@ class UI(builder.Builder):
             self.file_list_window.refresh()
         if self.playback_window is not None:
             self.playback_window.refresh()
+        self._refresh_next_preview()
+
+
+    def file_list_set_continuation(self, enabled):
+        """Change the default without overwriting individual file choices."""
+        self.file_list.set_continuation(enabled)
+        self._refresh_file_list()
+
+
+    def file_list_set_entry_continuation(self, indices, enabled):
+        """Set selected overrides, or reset them to the global choice with None."""
+        self.file_list.set_entry_continuation(indices, enabled)
+        self._refresh_file_list()
+
+
+    def _next_file_index(self, loop=False):
+        """Find the next existing list entry without opening or selecting it."""
+        current = self.file_list.current_index
+        opening = getattr(self, '_opening_entry', None)
+        if opening is not None:
+            current = next((index for index, entry in enumerate(self.file_list.entries)
+                            if entry.id == opening.id), current)
+        candidates = list(range(current + 1, len(self.file_list)))
+        if loop:
+            candidates += list(range(0, current + 1))
+        return next((index for index in candidates if self.file_list.entries[index].exists), None)
+
+
+    def _refresh_next_preview(self):
+        """Prepare read-only upcoming pages without touching the active document cache."""
+        if not getattr(self, 'p_frames_next', None):
+            return
+        count = self.doc.pages_number()
+        active = self.playback.is_active
+        current_only = active and self.playback.mode == 'current'
+        loop = active and self.playback.loop
+        entry = self._playback_entry()
+        can_continue = self.file_list.can_advance(entry)
+        next_index = self._next_file_index(loop) if can_continue and not current_only else None
+        external = self.file_list.entries[next_index] if next_index is not None else None
+        needs_external = (count > 0 and self.doc.doc is not None and external is not None and
+                          self.preview_page + self.next_frames_count >= count)
+        provider = self.next_file_preview.get(external if needs_external else None)
+        self._next_preview_pages = []
+        for offset, (frame, da) in enumerate(zip(self.p_frames_next, self.p_das_next)):
+            page = self.preview_page + offset + 1
+            upcoming = None
+            label = self._next_frame_labels[offset]
+            ratio = self.doc.page(self.preview_page).get_aspect_ratio(self.notes_mode.complement())
+            if offset >= self.next_frames_count:
+                page = None
+            elif page < count:
+                ratio = self.doc.page(page).get_aspect_ratio(self.notes_mode.complement())
+            elif current_only and loop and count:
+                page %= count
+                ratio = self.doc.page(page).get_aspect_ratio(self.notes_mode.complement())
+            elif needs_external:
+                page -= count
+                upcoming = external
+                if page < provider.page_count:
+                    ratio = provider.aspect(page)
+                    label = _('Next file: {name} · page {page}').format(name=external.name, page=page + 1)
+                if provider.error or page >= provider.page_count:
+                    page = None
+                    label = (_('Next file: {name} · Preview unavailable').format(name=external.name)
+                             if provider.error else label)
+            else:
+                page = None
+            self._next_preview_pages.append((upcoming, page))
+            self._next_frame_label_widgets[offset].set_text(label)
+            frame.set_tooltip_text(label)
+            frame.set_property('ratio', ratio)
+            da.queue_draw()
 
 
     def _restore_file_list_window(self):
@@ -1089,6 +1171,7 @@ class UI(builder.Builder):
             self.playback_window.refresh_status()
         if self.presenter_tools is not None:
             self.presenter_tools.refresh()
+        self._refresh_next_preview()
 
 
     def _toggle_timer(self, *args):
@@ -1152,12 +1235,9 @@ class UI(builder.Builder):
                     return None
                 self.goto_page(0, autoplay=True)
             else:
-                if self.doc.has_changes():
+                if self.doc.has_changes() or not self.file_list.can_advance():
                     return None
-                candidates = list(range(self.file_list.current_index + 1, len(self.file_list)))
-                if loop:
-                    candidates += list(range(0, self.file_list.current_index + 1))
-                next_index = next((index for index in candidates if self.file_list.entries[index].exists), None)
+                next_index = self._next_file_index(loop)
                 if next_index is None or not self.file_list_activate(next_index):
                     return None
                 self.talk_time.unpause()
@@ -1308,10 +1388,8 @@ class UI(builder.Builder):
 
     def file_list_next(self, *args):
         """Open the next existing file after the current list position."""
-        for index in range(self.file_list.current_index + 1, len(self.file_list)):
-            if self.file_list.entries[index].exists:
-                return self.file_list_activate(index)
-        return False
+        index = self._next_file_index()
+        return index is not None and self.file_list_activate(index)
 
 
     def file_list_previous(self, *args):
@@ -1602,7 +1680,7 @@ class UI(builder.Builder):
                 not (active_playback is not None and active_playback.is_active)):
             self.talk_time.unpause()
         elif not self.page_number.editing and self.preview_page >= self.doc.pages_number() - 1:
-            if self.file_list_next():
+            if self.file_list.can_advance() and self.file_list_next():
                 if active_playback is None or not active_playback.paused:
                     self.talk_time.unpause()
         else:
@@ -1694,7 +1772,6 @@ class UI(builder.Builder):
 
         page_content = self.doc.page(self.current_page)
         page_preview = self.doc.page(self.preview_page)
-        pages_next = [self.doc.page(self.preview_page + n + 1) for n in range(self.next_frames_count)]
         page_notes = self.doc.notes_page(self.preview_page)
 
         # Aspect ratios and queue redraws
@@ -1716,12 +1793,7 @@ class UI(builder.Builder):
             self.scribbler.scribble_p_frame.set_property('ratio', content_pr)
             self.scribbler.scribble_p_frame.queue_draw()
 
-        next_pr = preview_pr  # A default page ratio
-        for page, frame, da in zip(pages_next, self.p_frames_next, self.p_das_next):
-            if page is not None:
-                next_pr = page.get_aspect_ratio(draw_page)
-            frame.set_property('ratio', next_pr)
-            da.queue_draw()
+        self._refresh_next_preview()
 
         self.annotations.load_annotations(page_preview)
 
@@ -1788,8 +1860,17 @@ class UI(builder.Builder):
             # Notes page, aligned with preview
             page = self.doc.notes_page(self.preview_page)
         elif widget in self.p_das_next:
-            offset = 1 + int(widget.get_name()[len('p_da_next'):])
-            page = self.doc.page(self.preview_page + offset)
+            offset = self.p_das_next.index(widget)
+            upcoming, number = self._next_preview_pages[offset]
+            if number is None:
+                return
+            if upcoming is not None:
+                self.next_file_preview.draw(cairo_context, number,
+                                            widget.get_allocated_width(), widget.get_allocated_height())
+                if self.next_file_preview.error:
+                    self._refresh_next_preview()
+                return
+            page = self.doc.page(number)
             # No next page: just return so we won't draw anything
             if page is None:
                 return
@@ -2038,8 +2119,10 @@ class UI(builder.Builder):
 
         # Where did the event occur?
         if widget in self.p_das_next:
-            offset = 1 + int(widget.get_name()[len('p_da_next'):])
-            page = self.doc.page(self.preview_page + offset)
+            upcoming, number = self._next_preview_pages[self.p_das_next.index(widget)]
+            if upcoming is not None or number is None:
+                return False
+            page = self.doc.page(number)
         elif widget is self.p_da_notes:
             page = self.doc.notes_page(self.preview_page)
         elif widget is self.p_da_cur:
@@ -2077,8 +2160,11 @@ class UI(builder.Builder):
 
         # Where did the event occur?
         if widget in self.p_das_next:
-            offset = 1 + int(widget.get_name()[len('p_da_next'):])
-            page = self.doc.page(self.preview_page + offset)
+            upcoming, number = self._next_preview_pages[self.p_das_next.index(widget)]
+            if upcoming is not None or number is None:
+                extras.Cursor.set_cursor(widget, 'parent')
+                return False
+            page = self.doc.page(number)
         elif widget is self.p_da_notes:
             page = self.doc.notes_page(self.preview_page)
         elif widget is self.p_da_cur:

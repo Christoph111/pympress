@@ -160,7 +160,7 @@ class Files(Fixture):
         with mock.patch.object(filelist, 'MAX_PAGE_OVERRIDES', 1), self.assertRaises(filelist.FileListError):
             files.update_settings(0, page_seconds={0: 1, 1: 2})
 
-    def test_v2_round_trip_all_timing_and_transition_settings(self):
+    def test_v3_round_trip_all_timing_and_transition_settings(self):
         files = filelist.FileList()
         files.append([self.pdf, self.image])
         files.update_settings(0, slide_seconds=7.5, page_seconds={0: 0.1, 5: 86400}, transition_enabled=False)
@@ -169,7 +169,7 @@ class Files(Fixture):
         target = self.root / 'settings.json'
         files.save(target)
         saved = json.loads(target.read_text(encoding='utf-8'))
-        self.assertEqual(saved['version'], 2)
+        self.assertEqual(saved['version'], 3)
         self.assertEqual(saved['entries'][0]['page_seconds'], {'0': 0.1, '5': 86400})
         loaded = filelist.FileList.load(target)
         self.assertEqual(loaded.entries, files.entries)
@@ -186,8 +186,10 @@ class Files(Fixture):
         self.assertTrue(loaded.current.transition_enabled)
         self.assertEqual((loaded.transition_style, loaded.transition_seconds), ('cut', 0.5))
         self.assertEqual((loaded.playback_mode, loaded.playback_loop), ('current', False))
+        self.assertTrue(loaded.continue_by_default)
+        self.assertIsNone(loaded.current.continue_after)
 
-    def test_v2_rejects_nonfinite_or_malformed_timing_and_duplicate_json_keys(self):
+    def test_v3_rejects_nonfinite_or_malformed_timing_and_duplicate_json_keys(self):
         files = filelist.FileList()
         files.append(self.pdf)
         target = self.root / 'settings.json'
@@ -379,6 +381,173 @@ class Files(Fixture):
             with self.subTest(target=target), self.assertRaises(filelist.FileListError):
                 files.save(target)
         self.assertEqual(self.pdf.read_bytes(), original)
+
+
+class Continuation(Fixture):
+    def test_global_policy_requires_a_current_entry_and_resolves_overrides(self):
+        files = filelist.FileList()
+        self.assertTrue(files.continue_by_default)
+        self.assertFalse(files.can_advance())
+        first, second = files.append([self.pdf, self.image])
+        self.assertIsNone(first.continue_after)
+        self.assertFalse(files.can_advance())
+        self.assertTrue(files.can_advance(second))
+        files.set_current(0)
+        self.assertTrue(files.can_advance())
+        files.set_continuation(False)
+        self.assertFalse(files.can_advance())
+        files.set_entry_continuation([0], True)
+        self.assertTrue(files.can_advance())
+        self.assertFalse(files.can_advance(second))
+        files.set_continuation(True)
+        files.set_entry_continuation([0], False)
+        self.assertFalse(files.can_advance())
+        self.assertTrue(files.can_advance(second))
+        files.set_current(-1)
+        self.assertFalse(files.can_advance())
+        with self.assertRaises(filelist.FileListError):
+            files.can_advance(object())
+
+    def test_entry_reset_and_other_settings_updates_keep_stable_identity(self):
+        files = filelist.FileList()
+        first, duplicate = files.append([self.pdf, self.pdf])
+        files.set_current(0)
+        files.set_continuation(False)
+        changed, = files.set_entry_continuation([0, 0], True)
+        self.assertEqual(changed.id, first.id)
+        self.assertIs(files.current, changed)
+        self.assertIsNone(duplicate.continue_after)
+        changed = files.update_settings(0, slide_seconds=12, page_seconds={1: 3})
+        self.assertTrue(changed.continue_after)
+        reset = files.update_settings(0, continue_after=None)
+        self.assertIsNone(reset.continue_after)
+        self.assertEqual(reset.id, first.id)
+        self.assertEqual(reset.page_seconds, {1: 3})
+        self.assertFalse(files.can_advance())
+        files.move(0, 1)
+        self.assertIs(files.current, reset)
+        updated, = files.set_entry_continuation([1], False)
+        self.assertEqual(updated.id, first.id)
+        self.assertIs(files.current, updated)
+        reset, = files.set_entry_continuation([1], None)
+        self.assertIsNone(reset.continue_after)
+        self.assertIs(files.current, reset)
+        self.assertEqual(files.set_entry_continuation([], False), ())
+
+    def test_immutable_entry_replacement_distinguishes_omitted_and_inherited(self):
+        entry = filelist.FileEntry('a' * 32, self.pdf, continue_after=False)
+        changed = entry.with_settings(slide_seconds=2)
+        self.assertFalse(changed.continue_after)
+        self.assertFalse(entry.with_settings().continue_after)
+        self.assertIsNone(changed.with_settings(continue_after=None).continue_after)
+        self.assertTrue(changed._replace(continue_after=True).continue_after)
+        self.assertIsNone(filelist.FileEntry._make([entry.id, entry.path, 5, {}, True]).continue_after)
+        copied = filelist.FileEntry._make(tuple(changed))
+        self.assertEqual(copied, changed)
+        self.assertEqual(hash(copied), hash(changed))
+        with self.assertRaises(AttributeError):
+            entry.continue_after = True
+        for operation in [lambda: entry.with_settings(continue_after=1),
+                          lambda: entry._replace(continue_after=1),
+                          lambda: filelist.FileEntry._make([entry.id, entry.path, 5, {}, True, 1])]:
+            with self.assertRaises(filelist.FileListError):
+                operation()
+
+    def test_invalid_policy_values_and_indices_leave_all_settings_unchanged(self):
+        files = filelist.FileList()
+        files.append([self.pdf, self.image])
+        files.set_current(0)
+        files.set_continuation(False)
+        original = files.entries
+        for value in [0, 1, 0.0, 'true', [], {}, object()]:
+            with self.subTest(value=value):
+                for operation in [lambda: files.set_continuation(value),
+                                  lambda: files.set_entry_continuation([0, 1], value),
+                                  lambda: files.update_settings(0, continue_after=value),
+                                  lambda: filelist.FileEntry('b' * 32, self.pdf, continue_after=value)]:
+                    with self.assertRaises(filelist.FileListError):
+                        operation()
+                self.assertFalse(files.continue_by_default)
+                self.assertEqual(files.entries, original)
+        with self.assertRaises(filelist.FileListError):
+            files.set_continuation(None)
+        for indices in [[0, 2], [0, -1], [0, True], [0, 1.0], '0', None, 0]:
+            with self.subTest(indices=indices), self.assertRaises(filelist.FileListError):
+                files.set_entry_continuation(indices, True)
+            self.assertEqual(files.entries, original)
+            self.assertIs(files.current, original[0])
+        with mock.patch.object(filelist, 'MAX_ENTRIES', 1), self.assertRaises(filelist.FileListError):
+            files.set_entry_continuation([0, 1], True)
+        self.assertEqual(files.entries, original)
+
+    def test_v3_round_trip_preserves_global_inherited_and_explicit_settings(self):
+        files = filelist.FileList()
+        files.append([self.pdf, self.pdf, self.image])
+        files.set_current(1)
+        files.set_continuation(False)
+        files.set_entry_continuation([1], True)
+        files.set_entry_continuation([2], False)
+        target = self.root / 'continuation.json'
+        files.save(target)
+        saved = json.loads(target.read_text(encoding='utf-8'))
+        self.assertEqual(saved['version'], 3)
+        self.assertIs(saved['continue_by_default'], False)
+        self.assertEqual([entry['continue_after'] for entry in saved['entries']], [None, True, False])
+        loaded = filelist.FileList.load(target)
+        self.assertEqual(loaded.entries, files.entries)
+        self.assertEqual(loaded.current.id, files.current.id)
+        self.assertFalse(loaded.continue_by_default)
+        self.assertEqual([loaded.can_advance(entry) for entry in loaded.entries], [False, True, False])
+        loaded.set_continuation(True)
+        self.assertEqual([loaded.can_advance(entry) for entry in loaded.entries], [True, True, False])
+
+    def test_v2_lists_preserve_legacy_continuation_and_existing_playback_settings(self):
+        files = filelist.FileList()
+        files.append([self.pdf, self.image])
+        files.set_current(0)
+        files.update_settings(0, slide_seconds=7, page_seconds={1: 9}, transition_enabled=False)
+        files.set_transition('fade', 1.25)
+        files.set_playback('list', True)
+        target = self.root / 'legacy.json'
+        files.save(target)
+        saved = json.loads(target.read_text(encoding='utf-8'))
+        saved['version'] = 2
+        del saved['continue_by_default']
+        for entry in saved['entries']:
+            del entry['continue_after']
+        target.write_text(json.dumps(saved), encoding='utf-8')
+        loaded = filelist.FileList.load(target)
+        self.assertEqual(loaded.entries, files.entries)
+        self.assertTrue(loaded.continue_by_default)
+        self.assertTrue(loaded.can_advance())
+        self.assertTrue(all(entry.continue_after is None for entry in loaded.entries))
+        self.assertEqual((loaded.transition_style, loaded.transition_seconds), ('fade', 1.25))
+        self.assertEqual((loaded.playback_mode, loaded.playback_loop), ('list', True))
+
+    def test_v3_requires_strict_boolean_values_and_complete_known_schema(self):
+        files = filelist.FileList()
+        files.append(self.pdf)
+        target = self.root / 'strict.json'
+        files.save(target)
+        good = json.loads(target.read_text(encoding='utf-8'))
+        variants = [dict(good, continue_by_default=value) for value in [None, 0, 1, 0.0, 'true', [], {}]]
+        variants += [dict(good, entries=[dict(good['entries'][0], continue_after=value)])
+                     for value in [0, 1, 0.0, 'true', [], {}]]
+        no_default = dict(good)
+        del no_default['continue_by_default']
+        no_override = dict(good['entries'][0])
+        del no_override['continue_after']
+        variants += [no_default, dict(good, entries=[no_override]),
+                     dict(good, entries=[dict(good['entries'][0], unknown=True)])]
+        # New fields are accepted only under the new schema version.
+        v2_with_default = dict(good, version=2, entries=[no_override])
+        v2_with_override = dict(good, version=2)
+        del v2_with_override['continue_by_default']
+        variants += [v2_with_default, v2_with_override]
+        for value in variants:
+            target.write_text(json.dumps(value), encoding='utf-8')
+            with self.subTest(value=value), self.assertRaises(filelist.FileListError):
+                filelist.FileList.load(target)
 
 
 class Images(Fixture):

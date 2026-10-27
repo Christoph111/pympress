@@ -107,7 +107,8 @@ def load_integration(source):
         '_': lambda text: text}
     methods = {'swap_document', 'reload_document', 'file_list_add_paths', 'file_list_activate',
                'file_list_remove', 'file_list_move', 'file_list_clear', 'file_list_load',
-               'file_list_next', 'file_list_previous', 'goto_page', 'doc_goto_next', 'doc_goto_prev',
+               'file_list_next', '_next_file_index', 'file_list_previous', 'goto_page',
+               'doc_goto_next', 'doc_goto_prev',
                'on_key_input', 'cancel_current_input', 'exit_fullscreen', 'on_window_state_event',
                '_request_fullscreen', '_fullscreen_pending_target'}
     ui_class = extracted_class(source / 'pympress' / 'ui.py', 'UI', methods, globals_)

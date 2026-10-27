@@ -40,13 +40,14 @@ class FileListWindow(Gtk.ApplicationWindow):
     move, failed open, or document change preserves a user's selection.
     """
 
-    ID, ACTIVE, NUMBER, NAME, KIND, FOLDER, STATUS = range(7)
+    ID, ACTIVE, NUMBER, NAME, KIND, FOLDER, STATUS, CONTINUE = range(8)
 
     def __init__(self, ui):
         """Build an independent file-list window and connect its local controls."""
         super(FileListWindow, self).__init__(application=ui.app, title=_('File list · Pympress'))
         self.ui = ui
         self._dock = None
+        self._refreshing = False
         self.set_default_size(930, 480)
         self.set_size_request(620, 320)
         self.get_style_context().add_class('pympress-file-list')
@@ -80,12 +81,21 @@ class FileListWindow(Gtk.ApplicationWindow):
         self.save_button = self._button(files, _('Save list…'), self._save_list,
                                         _('Save the file order as a file list'))
 
+        self.continuation_check = Gtk.CheckButton(label=_('Continue to next file by default'))
+        self.continuation_check.get_child().set_line_wrap(True)
+        self.continuation_check.get_child().set_max_width_chars(34)
+        self.continuation_check.get_child().set_xalign(0)
+        self.continuation_check.set_tooltip_text(
+            _('Each file’s Next file checkbox overrides this default. Use Reset to global to restore it.'))
+        self.continuation_check.connect('toggled', self._on_default_continuation)
+        layout.pack_start(self.continuation_check, False, False, 0)
+
         hint = self.hint = Gtk.Label(label=_('Drop PDFs and images here. Double-click to open the selected file.'))
         hint.set_xalign(0)
         hint.set_line_wrap(True)
         layout.pack_start(hint, False, False, 0)
 
-        self.store = Gtk.ListStore(str, str, int, str, str, str, str)
+        self.store = Gtk.ListStore(str, str, int, str, str, str, str, bool)
         self.tree = Gtk.TreeView(model=self.store)
         self.tree.get_style_context().add_class('presentation-files')
         self.tree.set_headers_visible(True)
@@ -98,6 +108,11 @@ class FileListWindow(Gtk.ApplicationWindow):
         self._column('', self.ACTIVE)
         self._column('#', self.NUMBER)
         self.name_column = self._column(_('File'), self.NAME, expand=True, width=250)
+        renderer = Gtk.CellRendererToggle()
+        renderer.connect('toggled', self._on_entry_continuation)
+        self.continuation_column = Gtk.TreeViewColumn(_('Next file'), renderer, active=self.CONTINUE)
+        self.continuation_column.set_resizable(True)
+        self.tree.append_column(self.continuation_column)
         self._column(_('Type'), self.KIND)
         self.folder_column = self._column(_('Folder'), self.FOLDER, expand=True, width=230)
         self.status_column = self._column(_('Status'), self.STATUS, width=150)
@@ -128,6 +143,9 @@ class FileListWindow(Gtk.ApplicationWindow):
                                         _('Move the selection down in the list (Alt+↓)'))
         self.remove_button = self._button(edit, _('Remove'), self._remove_selected,
                                           _('Remove from the list; the files remain unchanged'))
+        self.reset_continuation_button = self._button(
+            edit, _('Reset to global'), self._reset_continuation,
+            _('Use the global next-file setting for the selected files'))
         self.clear_button = self._button(edit, _('Clear'), self._clear,
                                          _('Clear the file list without deleting any files'))
 
@@ -192,6 +210,11 @@ class FileListWindow(Gtk.ApplicationWindow):
         entries = self.ui.file_list.entries
         current = self.ui.file_list.current_index
         statuses = getattr(self.ui, 'file_list_status', {})
+        self._refreshing = True
+        try:
+            self.continuation_check.set_active(self.ui.file_list.continue_by_default)
+        finally:
+            self._refreshing = False
         self.store.clear()
         selection = self.tree.get_selection()
         for index, entry in enumerate(entries):
@@ -200,7 +223,8 @@ class FileListWindow(Gtk.ApplicationWindow):
             if index == current and not status:
                 status = _('Now showing')
             self.store.append([entry.id, '▶' if index == current else '', index + 1, entry.name,
-                               _('Image') if entry.is_image else _('PDF'), str(entry.path.parent), str(status)])
+                               _('Image') if entry.is_image else _('PDF'), str(entry.path.parent), str(status),
+                               self.ui.file_list.can_advance(entry)])
             if entry.id in selected:
                 selection.select_path(Gtk.TreePath.new_from_indices([index]))
 
@@ -219,6 +243,36 @@ class FileListWindow(Gtk.ApplicationWindow):
         self.summary.set_text(summary)
         self.summary.set_tooltip_text(summary)
         self._update_buttons()
+
+    def _on_default_continuation(self, button):
+        """Change the default without turning refresh signals into user changes."""
+        if self._refreshing:
+            return
+        self.ui.file_list_set_continuation(button.get_active())
+        self.refresh()
+
+    def _on_entry_continuation(self, _renderer, path):
+        """Toggle one displayed file by stable identity, even after list changes."""
+        if self._refreshing:
+            return
+        try:
+            entry_id = self.store[path][self.ID]
+        except (IndexError, KeyError, TypeError, ValueError):
+            return
+        for index, entry in enumerate(self.ui.file_list.entries):
+            if entry.id == entry_id:
+                self.ui.file_list_set_entry_continuation([index], not self.ui.file_list.can_advance(entry))
+                self.refresh()
+                return
+
+    def _reset_continuation(self, *_args):
+        """Restore inheritance for selected files that have an explicit override."""
+        selected_ids = {self.store[index][self.ID] for index in self._selected_indices()}
+        indices = [index for index, entry in enumerate(self.ui.file_list.entries)
+                   if entry.id in selected_ids and entry.continue_after is not None]
+        if indices:
+            self.ui.file_list_set_entry_continuation(indices, None)
+            self.refresh()
 
     @staticmethod
     def _flow_row(maximum=4):
@@ -298,6 +352,9 @@ class FileListWindow(Gtk.ApplicationWindow):
         current = self.ui.file_list.current_index
         self.open_button.set_sensitive(len(selected) == 1)
         self.remove_button.set_sensitive(bool(selected))
+        selected_ids = {self.store[index][self.ID] for index in selected}
+        self.reset_continuation_button.set_sensitive(any(
+            entry.id in selected_ids and entry.continue_after is not None for entry in self.ui.file_list.entries))
         self.up_button.set_sensitive(bool(selected) and selected[0] > 0)
         self.down_button.set_sensitive(bool(selected) and selected[-1] < count - 1)
         self.clear_button.set_sensitive(count > 0)

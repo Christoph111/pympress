@@ -1779,3 +1779,35 @@ msgstr ""
 msgid "Undock"
 msgstr ""
 
+msgid "Continue to next file by default"
+msgstr ""
+
+msgid "Each file’s Next file checkbox overrides this default. Use Reset to global to restore it."
+msgstr ""
+
+#, python-brace-format
+msgid "Next file: {name} · Preview unavailable"
+msgstr ""
+
+#, python-brace-format
+msgid "Next file: {name} · page {page}"
+msgstr ""
+
+msgid "Reset to global"
+msgstr ""
+
+msgid "The continuation setting must be enabled, disabled, or inherited."
+msgstr ""
+
+msgid "The default continuation setting must be enabled or disabled."
+msgstr ""
+
+msgid "The file entry is invalid."
+msgstr ""
+
+msgid "The next file cannot be previewed."
+msgstr ""
+
+msgid "Use the global next-file setting for the selected files"
+msgstr ""
+

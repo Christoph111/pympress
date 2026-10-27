@@ -70,6 +70,21 @@ class Widget:
         self.tooltip = value
 
 
+class ContinuationCheck(Widget):
+    def __init__(self, callback):
+        self.active = False
+        self.callback = callback
+
+    def set_active(self, value):
+        changed = value != self.active
+        self.active = value
+        if changed:
+            self.callback(self)
+
+    def get_active(self):
+        return self.active
+
+
 class Button:
     def __init__(self, sensitive=True, visible=True):
         self.sensitive = sensitive
@@ -92,6 +107,11 @@ GTK.TextView = type('TextView', (), {})
 
 
 class Store(list):
+    def __getitem__(self, index):
+        if isinstance(index, str):
+            index = int(index)
+        return super(Store, self).__getitem__(index)
+
     def clear(self):
         super(Store, self).clear()
         self.selection.selected.clear()
@@ -122,8 +142,12 @@ class FileListWindowTests(unittest.TestCase):
         self.ui.file_list_move = lambda index, delta: model.move(index, index + delta)
         self.ui.file_list_activate = lambda index: model.set_current(index)
         self.ui.file_list_remove = lambda indices: [model.remove(index) for index in reversed(indices)]
+        self.ui.file_list_set_continuation = mock.Mock(side_effect=model.set_continuation)
+        self.ui.file_list_set_entry_continuation = mock.Mock(side_effect=model.set_entry_continuation)
         self.window = FileListWindow.__new__(FileListWindow)
         self.window.ui = self.ui
+        self.window._refreshing = False
+        self.window.continuation_check = ContinuationCheck(self.window._on_default_continuation)
         self.window.get_focus = lambda: None
         self.window.propagate_key_event = lambda event: True
         self.window.store = Store()
@@ -131,7 +155,7 @@ class FileListWindowTests(unittest.TestCase):
         self.window.store.selection = selection
         self.window.tree = SimpleNamespace(get_selection=lambda: selection, has_focus=lambda: True)
         for name in ('empty_label', 'summary', 'open_button', 'remove_button', 'up_button', 'down_button',
-                     'clear_button', 'save_button', 'previous_button', 'next_button'):
+                     'clear_button', 'save_button', 'previous_button', 'next_button', 'reset_continuation_button'):
             setattr(self.window, name, Widget())
         self.window.refresh()
 
@@ -144,6 +168,122 @@ class FileListWindowTests(unittest.TestCase):
 
     def selected_ids(self):
         return [self.window.store[index][self.window.ID] for index in self.window._selected_indices()]
+
+    def test_default_checkbox_updates_inheriting_rows_without_changing_overrides(self):
+        model = self.ui.file_list
+        model.set_entry_continuation([1], True)
+        model.set_entry_continuation([2], False)
+        self.window.refresh()
+        self.window.continuation_check.set_active(False)
+        self.ui.file_list_set_continuation.assert_called_once_with(False)
+        self.assertFalse(model.continue_by_default)
+        self.assertEqual([row[self.window.CONTINUE] for row in self.window.store],
+                         [False, True, False, False, False])
+        self.assertEqual([entry.continue_after for entry in model.entries], [None, True, False, None, None])
+
+    def test_refresh_syncs_global_checkbox_without_reentering_change_callback(self):
+        self.ui.file_list_set_continuation.assert_not_called()
+        self.assertTrue(self.window.continuation_check.get_active())
+        self.ui.file_list.set_continuation(False)
+        self.window.refresh()
+        self.assertFalse(self.window.continuation_check.get_active())
+        self.ui.file_list_set_continuation.assert_not_called()
+        self.assertFalse(self.window._refreshing)
+
+    def test_row_checkbox_sets_explicit_opposite_of_effective_value(self):
+        model = self.ui.file_list
+        self.window._on_entry_continuation(None, '1')
+        self.ui.file_list_set_entry_continuation.assert_called_once_with([1], False)
+        self.assertIs(model.entries[1].continue_after, False)
+        self.assertFalse(self.window.store[1][self.window.CONTINUE])
+        self.assertTrue(self.window.reset_continuation_button.sensitive is False)
+        self.select(1)
+        self.assertTrue(self.window.reset_continuation_button.sensitive)
+        model.set_continuation(False)
+        self.window.refresh()
+        self.window._on_entry_continuation(None, '1')
+        self.assertIs(model.entries[1].continue_after, True)
+        self.assertTrue(self.window.store[1][self.window.CONTINUE])
+
+    def test_row_checkbox_follows_stable_identity_after_model_move(self):
+        model = self.ui.file_list
+        displayed_id = self.window.store[1][self.window.ID]
+        model.move(1, 4)
+        self.window._on_entry_continuation(None, '1')
+        self.ui.file_list_set_entry_continuation.assert_called_once_with([4], False)
+        self.assertEqual(model.entries[4].id, displayed_id)
+        self.assertIs(model.entries[4].continue_after, False)
+        self.assertIsNone(model.entries[1].continue_after)
+
+    def test_removed_or_invalid_checkbox_row_does_not_change_another_file(self):
+        self.ui.file_list.remove(1)
+        self.window._on_entry_continuation(None, '1')
+        for path in ('999', 'invalid', None):
+            self.window._on_entry_continuation(None, path)
+        self.ui.file_list_set_entry_continuation.assert_not_called()
+
+    def test_refresh_guard_blocks_row_checkbox_callbacks(self):
+        self.window._refreshing = True
+        self.window._on_entry_continuation(None, '0')
+        self.ui.file_list_set_entry_continuation.assert_not_called()
+
+    def test_reset_restores_global_only_for_selected_overridden_files(self):
+        model = self.ui.file_list
+        model.set_entry_continuation([1], False)
+        model.set_entry_continuation([3], True)
+        self.window.refresh()
+        self.select(0, 1, 2)
+        self.assertTrue(self.window.reset_continuation_button.sensitive)
+        self.window._reset_continuation()
+        self.ui.file_list_set_entry_continuation.assert_called_once_with([1], None)
+        self.assertEqual([entry.continue_after for entry in model.entries], [None, None, None, True, None])
+        self.assertEqual(self.window._selected_indices(), [0, 1, 2])
+        self.assertFalse(self.window.reset_continuation_button.sensitive)
+        model.set_continuation(False)
+        self.window.refresh()
+        self.assertEqual([row[self.window.CONTINUE] for row in self.window.store],
+                         [False, False, False, True, False])
+
+    def test_reset_resolves_displayed_selected_identity_after_model_move(self):
+        model = self.ui.file_list
+        model.set_entry_continuation([1], False)
+        self.window.refresh()
+        self.select(1)
+        entry_id = model.entries[1].id
+        model.move(1, 4)
+        self.window._reset_continuation()
+        self.ui.file_list_set_entry_continuation.assert_called_once_with([4], None)
+        self.assertEqual(model.entries[4].id, entry_id)
+        self.assertIsNone(model.entries[4].continue_after)
+
+    def test_reset_without_selected_overrides_keeps_model_unchanged(self):
+        self.select(0, 2)
+        self.assertFalse(self.window.reset_continuation_button.sensitive)
+        self.window._reset_continuation()
+        self.ui.file_list_set_entry_continuation.assert_not_called()
+        self.ui.file_list.set_entry_continuation([3], False)
+        self.window.refresh()
+        self.assertFalse(self.window.reset_continuation_button.sensitive)
+        self.select(3)
+        self.assertTrue(self.window.reset_continuation_button.sensitive)
+        self.select()
+        self.assertFalse(self.window.reset_continuation_button.sensitive)
+
+    def test_compact_dock_retains_continuation_and_missing_status_controls(self):
+        self.window.folder_column = mock.Mock()
+        self.window.name_column = mock.Mock()
+        self.window.status_column = mock.Mock()
+        self.window.hint = mock.Mock()
+        self.window.continuation_column = mock.Mock()
+        self.window.continuation_check.set_visible(True)
+        self.window.reset_continuation_button.set_visible(True)
+        self.window.set_compact(True)
+        self.window.folder_column.set_visible.assert_called_once_with(False)
+        self.window.hint.set_visible.assert_called_once_with(False)
+        self.window.status_column.set_fixed_width.assert_called_once_with(90)
+        self.window.continuation_column.set_visible.assert_not_called()
+        self.assertTrue(self.window.continuation_check.visible)
+        self.assertTrue(self.window.reset_continuation_button.visible)
 
     def test_docked_controls_use_presenter_focus_without_window_accelerators(self):
         host = SimpleNamespace(get_focus=lambda: GTK.Entry(), propagate_key_event=mock.Mock(return_value=True))
