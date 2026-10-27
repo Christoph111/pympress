@@ -14,6 +14,18 @@
                 <attribute name="submenu-action">app.list-recent-files</attribute>
             </submenu>
             <item>
+                <attribute name="label" translatable="yes">_File list…</attribute>
+                <attribute name="action">app.show-file-list</attribute>
+            </item>
+            <item>
+                <attribute name="label" translatable="yes">Previous file</attribute>
+                <attribute name="action">app.previous-file</attribute>
+            </item>
+            <item>
+                <attribute name="label" translatable="yes">Next file</attribute>
+                <attribute name="action">app.next-file</attribute>
+            </item>
+            <item>
                 <attribute name="label" translatable="yes">_Close</attribute>
                 <attribute name="action">app.close-file</attribute>
             </item>

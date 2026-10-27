@@ -63,7 +63,7 @@ except locale.Error as err:
     logger.exception('Failed loading locale: {}'.format(err))
     print('Failed loading locale: {}'.format(err), file=sys.stderr)
 
-util.get_translation('pympress').install()
+util.get_translation('pympress').install(names=['ngettext'])
 
 
 try:

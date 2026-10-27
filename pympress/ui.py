@@ -48,7 +48,8 @@ from gi.repository import GObject, Gtk, Gdk, GLib, GdkPixbuf, Gio
 
 
 from pympress import (
-    document, surfacecache, util, pointer, scribble, deck, builder, talk_time, dialog, extras, editable_label
+    document, surfacecache, util, pointer, scribble, deck, builder, talk_time, dialog, extras, editable_label,
+    filelist, image_document
 )
 
 
@@ -184,6 +185,11 @@ class UI(builder.Builder):
         super(UI, self).__init__()
         self.app = app
         self.config = config
+        self.file_list = filelist.FileList()
+        self.file_list_status = {}
+        self.file_list_window = None
+        self.source_uri = None
+        self.image_document = None
 
         self.blanked = self.config.getboolean('content', 'start_blanked')
 
@@ -246,6 +252,9 @@ class UI(builder.Builder):
             'save-file':         dict(activate=self.save_file),
             'save-file-as':      dict(activate=self.save_file_as),
             'pick-file':         dict(activate=self.pick_file),
+            'show-file-list': dict(activate=self.show_file_list),
+            'next-file': dict(activate=self.file_list_next),
+            'previous-file': dict(activate=self.file_list_previous),
             'list-recent-files': dict(change_state=self.populate_recent_menu, state=False),
             'page':              dict(activate=lambda gaction, param: self.goto_page(param.get_int64()),
                                       parameter_type=int, state=self.current_page),
@@ -293,6 +302,15 @@ class UI(builder.Builder):
             if action == 'highlight-hold-to-erase':
                 continue  # Not really an action but we define a shortcut for it
             self.app.set_accels_for_action('app.' + action, shortcut_list)
+
+        # Keep the explicitly requested presentation keys available with old user configs.
+        for action, keys in {
+            'show-file-list': ['<Shift>l', '<Primary><Shift>l', '<Control><Shift>l'],
+            'next-file': ['<Primary>Right', '<Primary>Down', '<Meta>Right', '<Meta>Down'],
+            'previous-file': ['<Primary>Left', '<Primary>Up', '<Meta>Left', '<Meta>Up'],
+        }.items():
+            self.app.set_accels_for_action('app.' + action,
+                                           list(dict.fromkeys(self.config.shortcuts.get(action, []) + keys)))
 
         # Common to both windows
         self.load_icons()
@@ -366,6 +384,7 @@ class UI(builder.Builder):
 
         self.c_win.insert_action_group('content', self.c_win.get_action_group('win'))
         self.c_win.insert_action_group('win', None)
+        self._configure_drop_target(self.c_win)
 
 
     def make_pwin(self):
@@ -393,8 +412,7 @@ class UI(builder.Builder):
         self.page_number.set_last(self.doc.pages_number())
 
         # Enable dropping files onto the window
-        self.p_win.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
-        self.p_win.drag_dest_add_text_targets()
+        self._configure_drop_target(self.p_win)
 
         self.p_win.insert_action_group('presenter', self.c_win.get_action_group('win'))
         self.p_win.insert_action_group('win', None)
@@ -732,6 +750,10 @@ class UI(builder.Builder):
         self.medias.hide_all()
 
         self.doc.cleanup_media_files()
+        if self.image_document is not None:
+            self.image_document.cleanup()
+        if self.file_list_window is not None:
+            self.file_list_window.hide()
 
         if self.app.get_action_state('content-fullscreen'):
             # In case we used hard-disabling
@@ -779,29 +801,38 @@ class UI(builder.Builder):
             reloading (`bool`): whether we are reloading or detecting stuff from the document
         """
         if self.unsaved_changes(reloading):
+            self._open_cancelled = True
             # If we keep the unsaved changes and were prompted by automatic file change,
             # stop watching for file changes in the future.
             if reloading:
                 self.file_watcher.stop_watching()
-            return
+            return False
 
         run_gc = self.doc.doc is not None
+        prepared = None
         try:
-            self.doc = document.Document.create(self, doc_uri)
+            if doc_uri:
+                source = filelist.local_path(doc_uri)
+                doc_uri = source.as_uri()
+                if source.suffix.lower() in filelist.IMAGE_SUFFIXES:
+                    prepared = image_document.prepare_image(source)
+            new_doc = document.Document.create(self, prepared.uri if prepared else doc_uri)
+        except (GLib.Error, OSError, ValueError):
+            if prepared is not None:
+                prepared.cleanup()
+            logger.exception('Could not open presentation file')
+            if not reloading:
+                self.error_opening_file(doc_uri)
+            return False
 
-            if not reloading and doc_uri:
-                Gtk.RecentManager.get_default().add_item(doc_uri)
-                self.file_watcher.watch_file(doc_uri, self.reload_document)
-
-            elif not reloading:
-                self.file_watcher.stop_watching()
-
-        except GLib.Error:
-            if reloading:
-                return
-
-            self.doc = document.Document.create(self, None)
-            self.error_opening_file(doc_uri)
+        previous_image = self.image_document
+        self.doc = new_doc
+        self.image_document = prepared
+        self.source_uri = doc_uri
+        if not reloading and doc_uri:
+            Gtk.RecentManager.get_default().add_item(doc_uri)
+            self.file_watcher.watch_file(doc_uri, self.reload_document)
+        elif not reloading:
             self.file_watcher.stop_watching()
 
         self.current_page = self.preview_page = self.doc.goto(page)
@@ -810,7 +841,8 @@ class UI(builder.Builder):
         if not reloading:
             hpref = self.config.get('notes position', 'horizontal')
             vpref = self.config.get('notes position', 'vertical')
-            target_mode = self.doc.guess_notes(hpref, vpref, self.current_page)
+            target_mode = (document.PdfPage.NONE if prepared is not None
+                           else self.doc.guess_notes(hpref, vpref, self.current_page))
 
             if self.notes_mode != target_mode:
                 self.switch_mode('notes-mode', target_mode=target_mode)
@@ -842,12 +874,16 @@ class UI(builder.Builder):
         # collect garbage to delete objects and release file handles / close file descriptors
         if run_gc:
             gc.collect(1)
+        if previous_image is not None:
+            previous_image.cleanup()
+        self._refresh_file_list()
+        return True
 
 
     def reload_document(self):
         """ Reload the current document.
         """
-        self.swap_document(self.doc.get_uri(), page=self.current_page, reloading=True)
+        self.swap_document(self.source_uri, page=self.current_page, reloading=True)
 
 
     def populate_recent_menu(self, gaction, is_opening=None):
@@ -864,7 +900,9 @@ class UI(builder.Builder):
             return
 
         for file in Gtk.RecentManager.get_default().get_items():
-            if not file.exists() or not file.get_mime_type() == 'application/pdf':
+            if (not file.exists() or
+                    pathlib.Path(url2pathname(urlsplit(file.get_uri()).path)).suffix.lower()
+                    not in filelist.SUPPORTED_SUFFIXES):
                 continue
 
             item = Gio.MenuItem.new(file.get_display_name(), 'app.open-file')
@@ -877,23 +915,206 @@ class UI(builder.Builder):
                 break
 
 
+    def _refresh_file_list(self):
+        """Refresh document titles and any open management windows."""
+        current = self.file_list.current
+        self.p_win.set_title(_('Pympress – Presenter · {name}').format(name=current.name) if current
+                             else _('Pympress – Presenter'))
+        self.c_win.set_title(_('Pympress – Content · {name}').format(name=current.name) if current
+                             else _('Pympress – Content'))
+        if self.file_list_window is not None:
+            self.file_list_window.refresh()
+
+
+    def show_file_list(self, *args):
+        """Toggle the independent file-list window."""
+        if self.file_list_window is None:
+            from pympress.filelist_window import FileListWindow
+            self.file_list_window = FileListWindow(self)
+        if self.file_list_window.get_visible():
+            self.file_list_window.hide()
+        else:
+            self.file_list_window.present()
+
+
+    def file_list_error(self, message):
+        """Report a file-list failure without prompting during automatic playback."""
+        dialog = Gtk.MessageDialog(transient_for=self.p_win, flags=Gtk.DialogFlags.MODAL,
+                                   message_type=Gtk.MessageType.ERROR, text=str(message))
+        dialog.add_button(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+        dialog.run()
+        dialog.destroy()
+
+
+    def file_list_add_paths(self, paths, activate=False):
+        """Validate and append local files, optionally opening the first addition."""
+        try:
+            added = self.file_list.append(paths)
+        except (OSError, ValueError) as error:
+            self.file_list_error(error)
+            return False
+        self._refresh_file_list()
+        if added and activate:
+            return self.file_list_activate(len(self.file_list) - len(added))
+        return bool(added)
+
+
+    def file_list_activate(self, index):
+        """Open an entry and update selection only after a successful document change."""
+        if not 0 <= index < len(self.file_list):
+            return False
+        entry = self.file_list.entries[index]
+        if not entry.exists:
+            self.file_list_status[entry.id] = _('Missing')
+            self._refresh_file_list()
+            self.file_list_error(_('File not found: {}').format(entry.path))
+            return False
+        self._open_cancelled = False
+        opened = self.swap_document(entry.uri)
+        if not opened:
+            if not self._open_cancelled:
+                self.file_list_status[entry.id] = _('Could not open file')
+            self._refresh_file_list()
+            return False
+        self.file_list.set_current(index)
+        self.file_list_status.pop(entry.id, None)
+        self._refresh_file_list()
+        return True
+
+
+    def file_list_remove(self, indices):
+        """Remove entries while preserving unsaved work in the active document."""
+        indices = sorted(set(indices), reverse=True)
+        if not indices or any(not 0 <= index < len(self.file_list) for index in indices):
+            return False
+        current = self.file_list.current_index
+        removing_current = current in indices
+        if removing_current and not self.swap_document(None):
+            return False
+        replacement = current - sum(index < current for index in indices)
+        for index in indices:
+            entry = self.file_list.remove(index)
+            self.file_list_status.pop(entry.id, None)
+        if removing_current and len(self.file_list):
+            index = min(replacement, len(self.file_list) - 1)
+            if self.file_list.entries[index].exists:
+                self.file_list_activate(index)
+        self._refresh_file_list()
+        return True
+
+
+    def file_list_move(self, index, delta):
+        """Move an entry by a relative offset within the list."""
+        target = index + delta
+        if not (0 <= index < len(self.file_list) and 0 <= target < len(self.file_list)):
+            return False
+        self.file_list.move(index, target)
+        self._refresh_file_list()
+        return True
+
+
+    def file_list_clear(self):
+        """Clear the list after allowing unsaved document changes to be handled."""
+        if not self.swap_document(None):
+            return False
+        self.file_list.clear()
+        self.file_list_status.clear()
+        self._refresh_file_list()
+        return True
+
+
+    def file_list_save(self, path):
+        """Save the current file list to an explicitly named JSON file."""
+        try:
+            if pathlib.Path(path).suffix.lower() != '.json':
+                raise filelist.FileListError(_('Please choose a filename ending in .json.'))
+            self.file_list.save(path)
+            return True
+        except (OSError, ValueError) as error:
+            self.file_list_error(error)
+            return False
+
+
+    def file_list_load(self, path):
+        """Restore a saved list and open its preferred available entry."""
+        try:
+            loaded = filelist.FileList.load(path)
+        except (OSError, ValueError) as error:
+            self.file_list_error(error)
+            return False
+        if not self.swap_document(None):
+            return False
+        preferred = loaded.current_index
+        loaded.set_current(-1)
+        self.file_list = loaded
+        self.file_list_status.clear()
+        self._refresh_file_list()
+        candidates = ([preferred] if preferred >= 0 else []) + list(range(len(loaded)))
+        for index in candidates:
+            if loaded.entries[index].exists:
+                self.file_list_activate(index)
+                break
+        return True
+
+
+    def file_list_next(self, *args):
+        """Open the next existing file after the current list position."""
+        for index in range(self.file_list.current_index + 1, len(self.file_list)):
+            if self.file_list.entries[index].exists:
+                return self.file_list_activate(index)
+        return False
+
+
+    def file_list_previous(self, *args):
+        """Open the previous existing file before the current list position."""
+        for index in range(self.file_list.current_index - 1, -1, -1):
+            if self.file_list.entries[index].exists:
+                return self.file_list_activate(index)
+        return False
+
+
+    def _configure_drop_target(self, widget):
+        # Request and finish the drop ourselves, once validation has succeeded.
+        """Accept local URI and text drops with explicit completion handling."""
+        widget.drag_dest_set(Gtk.DestDefaults.MOTION | Gtk.DestDefaults.HIGHLIGHT, [], Gdk.DragAction.COPY)
+        widget.drag_dest_add_uri_targets()
+        widget.drag_dest_add_text_targets()
+        widget.connect('drag-drop', self.on_drop_request)
+
+
+    def on_drop_request(self, widget, context, x, y, time):
+        """Request a supported drag payload before validating dropped files."""
+        target = widget.drag_dest_find_target(context, None)
+        if target is None:
+            return False
+        widget.drag_get_data(context, target, time)
+        return True
+
+
+    def file_list_drop(self, data, activate=True):
+        """Decode and validate a file drop before adding its entries."""
+        try:
+            if data.get_length() < 0:
+                return False
+            uris = data.get_uris()
+            paths = (filelist.decode_drop('\n'.join(uris), uri_list=True) if uris
+                     else filelist.decode_drop(data.get_text()))
+            if not paths:
+                return False
+            return self.file_list_add_paths(paths, activate=activate)
+        except (OSError, ValueError) as error:
+            self.file_list_error(error)
+            return False
+
+
     def on_drag_drop(self, widget, drag_context, x, y, data, info, time):
-        """ Receive the drag-drops (as text only). If a file is dropped, open it.
-
-        Args:
-            widget (:class:`~Gtk.Widget`): The widget on which the dragged item was dropped
-            drag_context (:class:`~Gdk.DragContext`): Context object of the dragging
-            x (`float`): position of the drop
-            y (`float`):  position of the drop
-            data (:class:`~Gtk.SelectionData`): container for the dropped data
-            info (`int`): info on the target
-            time (`int`): time of the drop
-        """
-        uri_parts = urlsplit(data.get_text())
-        path = pathlib.Path(url2pathname(uri_parts.path) if uri_parts.scheme else uri_parts.path)
-
-        if path.is_file() and path.suffix.lower() == '.pdf':
-            self.swap_document(path.as_uri())
+        """Validate a file drop and finish its drag context exactly once."""
+        success = False
+        try:
+            success = self.file_list_drop(data, activate=True)
+            return success
+        finally:
+            Gtk.drag_finish(drag_context, success, False, time)
 
 
     def unsaved_changes(self, reload=False):
@@ -946,61 +1167,42 @@ class UI(builder.Builder):
 
 
     def save_file_as(self, *args):
-        """ Remove the current document.
-        """
-        # Use a GTK file dialog to choose file
-        dialog = Gtk.FileChooserDialog(title = _('Save as...'), transient_for = self.p_win,
-                                       action = Gtk.FileChooserAction.SAVE)
-        dialog.add_buttons(Gtk.STOCK_SAVE_AS, Gtk.ResponseType.OK)
+        """Save a PDF explicitly; image originals are never export targets."""
+        dialog = Gtk.FileChooserDialog(title=_('Save as...'), transient_for=self.p_win,
+                                       action=Gtk.FileChooserAction.SAVE)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_SAVE_AS, Gtk.ResponseType.OK)
         dialog.set_default_response(Gtk.ResponseType.OK)
-        dialog.set_position(Gtk.WindowPosition.CENTER)
-
+        dialog.set_do_overwrite_confirmation(True)
+        if self.source_uri:
+            source = pathlib.Path(url2pathname(urlsplit(self.source_uri).path))
+            dialog.set_current_name(source.stem + '.pdf')
         file_filter = Gtk.FileFilter()
         file_filter.set_name(_('PDF files'))
-        file_filter.add_mime_type('application/pdf')
         file_filter.add_pattern('*.pdf')
         dialog.add_filter(file_filter)
-
-        file_filter = Gtk.FileFilter()
-        file_filter.set_name(_('All files'))
-        file_filter.add_pattern('*')
-        dialog.add_filter(file_filter)
-
         response = dialog.run()
-
-        if response == Gtk.ResponseType.OK:
-            self._save_document(dialog.get_uri())
-
+        destination = dialog.get_uri() if response == Gtk.ResponseType.OK else None
         dialog.destroy()
+        return self._save_document(destination) if destination else False
 
 
     def pick_file(self, *args):
-        """ Ask the user which file he means to open.
-        """
-        # Use a GTK file dialog to choose file
-        dialog = Gtk.FileChooserDialog(title = _('Open...'), transient_for = self.p_win,
-                                       action = Gtk.FileChooserAction.OPEN)
-        dialog.add_buttons(Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
+        """Append one or more PDFs/images and open the first selected file."""
+        dialog = Gtk.FileChooserDialog(title=_('Open...'), transient_for=self.p_win,
+                                       action=Gtk.FileChooserAction.OPEN)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
         dialog.set_default_response(Gtk.ResponseType.OK)
-        dialog.set_position(Gtk.WindowPosition.CENTER)
-
+        dialog.set_select_multiple(True)
         file_filter = Gtk.FileFilter()
-        file_filter.set_name(_('PDF files'))
-        file_filter.add_mime_type('application/pdf')
-        file_filter.add_pattern('*.pdf')
+        file_filter.set_name(_('PDFs and images'))
+        for suffix in sorted(filelist.SUPPORTED_SUFFIXES):
+            file_filter.add_pattern('*' + suffix)
+            file_filter.add_pattern('*' + suffix.upper())
         dialog.add_filter(file_filter)
-
-        file_filter = Gtk.FileFilter()
-        file_filter.set_name(_('All files'))
-        file_filter.add_pattern('*')
-        dialog.add_filter(file_filter)
-
         response = dialog.run()
-
-        if response == Gtk.ResponseType.OK:
-            self.swap_document(dialog.get_uri())
-
+        uris = dialog.get_uris() if response == Gtk.ResponseType.OK else []
         dialog.destroy()
+        return self.file_list_add_paths(uris, activate=True) if uris else False
 
 
     def error_opening_file(self, uri):
@@ -1027,7 +1229,9 @@ class UI(builder.Builder):
     def close_file(self, *args):
         """ Remove the current document.
         """
-        self.swap_document(None)
+        if self.swap_document(None):
+            self.file_list.set_current(-1)
+            self._refresh_file_list()
 
 
     def save_file(self, *args):
@@ -1039,7 +1243,15 @@ class UI(builder.Builder):
     def _save_document(self, dest_uri=None):
         """ Report save failures and let close/reload callers keep unsaved work open.
         """
+        prepared = getattr(self, 'image_document', None)
+        if prepared is not None and dest_uri is None:
+            return self.save_file_as()
         try:
+            if prepared is not None:
+                destination = document.Document._local_path(dest_uri)
+                if (destination is None or destination.suffix.lower() != '.pdf' or
+                        destination == prepared.source_path):
+                    raise ValueError(_('Images can only be exported to a new PDF file.'))
             if self.doc.save_changes(dest_uri):
                 return True
         except (OSError, ValueError, GLib.Error):
@@ -1062,7 +1274,7 @@ class UI(builder.Builder):
             gaction (:class:`~Gio.Action`): the action triggering the call
             target (:class:`~GLib.Variant`): the file to open as a string variant
         """
-        self.swap_document(target.get_string())
+        self.file_list_add_paths([target.get_string()], activate=True)
 
 
     def get_notes_mode(self):
@@ -1116,7 +1328,11 @@ class UI(builder.Builder):
             gaction (:class:`~Gio.Action`): the action triggering the call
             param (:class:`~GLib.Variant`): the parameter as a variant, or None
         """
-        self.goto_page(self.preview_page - 1)
+        if not self.page_number.editing and self.preview_page == 0:
+            if self.file_list_previous():
+                self.goto_page(self.doc.pages_number() - 1)
+        else:
+            self.goto_page(self.preview_page - 1)
 
 
     def doc_goto_next(self, gaction=None, param=None):
@@ -1128,6 +1344,9 @@ class UI(builder.Builder):
         """
         if not self.page_number.editing and self.talk_time.paused:
             self.talk_time.unpause()
+        elif not self.page_number.editing and self.preview_page >= self.doc.pages_number() - 1:
+            if self.file_list_next():
+                self.talk_time.unpause()
         else:
             self.goto_page(self.preview_page + 1)
 
@@ -1639,6 +1858,33 @@ class UI(builder.Builder):
         return True
 
 
+    def exit_fullscreen(self):
+        """Exit native or pending fullscreen requests in both presentation windows."""
+        changed = False
+        for widget, name in ((self.c_win, 'content-fullscreen'), (self.p_win, 'presenter-fullscreen')):
+            native = widget.get_window()
+            fullscreen = native is not None and native.get_state() & Gdk.WindowState.FULLSCREEN
+            if fullscreen or self.app.get_action_state(name):
+                widget.unfullscreen()
+                self.app.set_action_state(name, False)
+                if widget is self.c_win:
+                    self.set_screensaver(disabled=False)
+                changed = True
+        return changed
+
+
+    def on_window_state_event(self, widget, event):
+        """Keep fullscreen actions and screensaver inhibition in sync with GTK."""
+        if event.changed_mask & Gdk.WindowState.FULLSCREEN:
+            name = 'content-fullscreen' if widget is self.c_win else 'presenter-fullscreen'
+            fullscreen = bool(event.new_window_state & Gdk.WindowState.FULLSCREEN)
+            previous = self.app.get_action_state(name)
+            self.app.set_action_state(name, fullscreen)
+            if widget is self.c_win and previous != fullscreen:
+                self.set_screensaver(disabled=fullscreen)
+        return False
+
+
     def set_screensaver(self, disabled):
         """ Disable or re-enable the screensaver.
 
@@ -1932,33 +2178,6 @@ class UI(builder.Builder):
 
         self.config.set('presenter', 'show_bigbuttons', 'on' if self.show_bigbuttons else 'off')
         self.app.set_action_state('big-buttons', self.show_bigbuttons)
-
-
-    def exit_fullscreen(self):
-        """Exit native or pending fullscreen requests in both presentation windows."""
-        changed = False
-        for widget, name in ((self.c_win, 'content-fullscreen'), (self.p_win, 'presenter-fullscreen')):
-            native = widget.get_window()
-            fullscreen = native is not None and native.get_state() & Gdk.WindowState.FULLSCREEN
-            if fullscreen or self.app.get_action_state(name):
-                widget.unfullscreen()
-                self.app.set_action_state(name, False)
-                if widget is self.c_win:
-                    self.set_screensaver(disabled=False)
-                changed = True
-        return changed
-
-
-    def on_window_state_event(self, widget, event):
-        """Keep fullscreen actions and screensaver inhibition in sync with GTK."""
-        if event.changed_mask & Gdk.WindowState.FULLSCREEN:
-            name = 'content-fullscreen' if widget is self.c_win else 'presenter-fullscreen'
-            fullscreen = bool(event.new_window_state & Gdk.WindowState.FULLSCREEN)
-            previous = self.app.get_action_state(name)
-            self.app.set_action_state(name, fullscreen)
-            if widget is self.c_win and previous != fullscreen:
-                self.set_screensaver(disabled=fullscreen)
-        return False
 
 
 ##

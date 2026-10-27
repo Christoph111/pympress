@@ -13,7 +13,11 @@ except ImportError:
 
 import ast
 import enum
+import importlib.util
 import logging
+from pathlib import Path
+import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -103,13 +107,21 @@ def extracted_class(path, class_name, method_names, globals_):
 
 
 def load_callbacks(source):
+    filelist_path = source / 'pympress' / 'filelist.py'
+    spec = importlib.util.spec_from_file_location('input_filelist_under_test', filelist_path)
+    filelist = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = filelist
+    spec.loader.exec_module(filelist)
     gtk = types.SimpleNamespace(drag_finish=mock.Mock())
     globals_ = {'Gtk': gtk, 'Gdk': types.SimpleNamespace(WindowState=WindowState),
-                'GLib': types.SimpleNamespace(Variant=Variant),
-                'logger': logging.getLogger('fullscreen_inputs'), '_': lambda text: text}
+                'GLib': types.SimpleNamespace(Variant=Variant, get_current_time=lambda: 12345),
+                'logger': logging.getLogger('input_callbacks_under_test'),
+                'filelist': filelist, '_': lambda text: text}
     ui = extracted_class(source / 'pympress' / 'ui.py', 'UI',
-                         {'cancel_current_input', 'exit_fullscreen', 'switch_fullscreen'}, globals_)
-    return ui, None, gtk
+                         {'cancel_current_input', 'exit_fullscreen', 'switch_fullscreen',
+                          'file_list_drop', 'on_drag_drop', 'on_drop_request'}, globals_)
+    app = extracted_class(source / 'pympress' / 'app.py', 'Pympress', {'do_open'}, globals_)
+    return ui, app, gtk
 
 
 class FullscreenInputTests(unittest.TestCase):
@@ -210,13 +222,121 @@ class FullscreenInputTests(unittest.TestCase):
         self.assertTrue(action.state)
 
 
+class DropInputTests(unittest.TestCase):
+    ui_class = None
+    gtk = None
+
+    def setUp(self):
+        self.gtk.drag_finish.reset_mock()
+        self.temp = tempfile.TemporaryDirectory(prefix='pympress-drop-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name).resolve()
+        self.first = self.directory / 'Bühne mit Leerzeichen.pdf'
+        self.second = self.directory / 'Next image.png'
+        self.first.write_bytes(b'%PDF-1.4 inert fixture')
+        self.second.write_bytes(b'inert image path fixture')
+
+    def ui(self):
+        ui = self.ui_class()
+        ui.file_list_add_paths = mock.Mock(return_value=True)
+        ui.file_list_error = mock.Mock()
+        ui._file_list_error = mock.Mock()
+        ui.show_file_list_error = mock.Mock()
+        return ui
+
+    def selection(self, uris=(), text=None):
+        return types.SimpleNamespace(get_uris=mock.Mock(return_value=list(uris)),
+                                     get_text=mock.Mock(return_value=text),
+                                     get_length=mock.Mock(return_value=20))
+
+    def test_drop_prefers_native_uri_list_and_preserves_all_file_order(self):
+        ui = self.ui()
+        data = self.selection([self.first.as_uri(), self.second.as_uri()], '/bad/fallback.pdf')
+        self.assertTrue(ui.file_list_drop(data))
+        paths = ui.file_list_add_paths.call_args.args[0]
+        self.assertEqual([Path(path) for path in paths], [self.first, self.second])
+        self.assertTrue(ui.file_list_add_paths.call_args.kwargs['activate'])
+
+    def test_plain_text_fallback_accepts_multiple_local_paths(self):
+        ui = self.ui()
+        data = self.selection(text=str(self.first) + '\n' + str(self.second))
+        self.assertTrue(ui.file_list_drop(data, activate=False))
+        paths = ui.file_list_add_paths.call_args.args[0]
+        self.assertEqual([Path(path) for path in paths], [self.first, self.second])
+        self.assertFalse(ui.file_list_add_paths.call_args.kwargs['activate'])
+
+    def test_empty_selection_does_not_append_or_activate(self):
+        ui = self.ui()
+        self.assertFalse(ui.file_list_drop(self.selection()))
+        ui.file_list_add_paths.assert_not_called()
+
+    def test_data_received_finishes_accepted_copy_once_without_deleting_source(self):
+        ui = self.ui()
+        ui.file_list_drop = mock.Mock(return_value=True)
+        context, data = object(), self.selection([self.first.as_uri()])
+        self.assertTrue(ui.on_drag_drop(object(), context, 0, 0, data, 0, 54321))
+        self.gtk.drag_finish.assert_called_once_with(context, True, False, 54321)
+
+    def test_data_received_finishes_rejected_drop_once_without_deleting_source(self):
+        ui = self.ui()
+        ui.file_list_drop = mock.Mock(return_value=False)
+        context = object()
+        self.assertFalse(ui.on_drag_drop(object(), context, 0, 0, self.selection(), 0, 54321))
+        self.gtk.drag_finish.assert_called_once_with(context, False, False, 54321)
+
+    def test_drop_request_fetches_supported_selection_before_finishing(self):
+        ui = self.ui()
+        target, context = object(), object()
+        widget = types.SimpleNamespace(drag_dest_find_target=mock.Mock(return_value=target),
+                                       drag_get_data=mock.Mock())
+        self.assertTrue(ui.on_drop_request(widget, context, 0, 0, 54321))
+        widget.drag_get_data.assert_called_once_with(context, target, 54321)
+        self.gtk.drag_finish.assert_not_called()
+
+    def test_drop_request_without_matching_target_does_not_request_data(self):
+        ui = self.ui()
+        widget = types.SimpleNamespace(drag_dest_find_target=mock.Mock(return_value=None),
+                                       drag_get_data=mock.Mock())
+        self.assertFalse(ui.on_drop_request(widget, object(), 0, 0, 54321))
+        widget.drag_get_data.assert_not_called()
 
 
+class MacOSOpenTests(unittest.TestCase):
+    app_class = None
+
+    def app(self):
+        app = self.app_class()
+        app.do_activate = mock.Mock()
+        app.gui = types.SimpleNamespace(file_list_add_paths=mock.Mock())
+        return app
+
+    def test_open_retains_all_files_in_finder_order(self):
+        app = self.app()
+        uris = ['file:///tmp/first.pdf', 'file:///tmp/second.png', 'file:///tmp/third.pdf']
+        files = [types.SimpleNamespace(get_uri=lambda uri=uri: uri) for uri in uris]
+        app.do_open(files, len(files), '')
+        app.do_activate.assert_called_once()
+        app.gui.file_list_add_paths.assert_called_once_with(uris, activate=True)
+
+    def test_open_honors_native_file_count(self):
+        app = self.app()
+        files = [types.SimpleNamespace(get_uri=lambda: 'file:///tmp/first.pdf'),
+                 types.SimpleNamespace(get_uri=lambda: 'file:///tmp/unused.pdf')]
+        app.do_open(files, 1, '')
+        app.gui.file_list_add_paths.assert_called_once_with(['file:///tmp/first.pdf'], activate=True)
+
+    def test_open_without_files_does_not_create_or_activate_ui(self):
+        app = self.app()
+        app.do_open([], 0, '')
+        app.do_activate.assert_not_called()
+        app.gui.file_list_add_paths.assert_not_called()
 
 
 def setUpModule():
     ui, app, gtk = load_callbacks(SOURCE)
     FullscreenInputTests.ui_class = ui
+    DropInputTests.ui_class, DropInputTests.gtk = ui, gtk
+    MacOSOpenTests.app_class = app
 
 
 if __name__ == '__main__':

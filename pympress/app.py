@@ -226,7 +226,7 @@ class Pympress(Gtk.Application):
 
 
     def do_open(self, files, n_files, hint):
-        """ Handle opening files. In practice we only open once, the last one.
+        """ Add all requested files in order and open the first added file.
 
         Args:
             files (`list` of :class:`~Gio.File`): representing an array of files to open
@@ -237,7 +237,7 @@ class Pympress(Gtk.Application):
             return
 
         self.do_activate(timestamp=GLib.get_current_time())
-        self.gui.swap_document(files[-1].get_uri())
+        self.gui.file_list_add_paths([file.get_uri() for file in files[:n_files]], activate=True)
 
 
     def do_shutdown(self):
