@@ -937,9 +937,10 @@ class UI(builder.Builder):
         dialog.destroy()
 
         if response == Gtk.ResponseType.YES:
-            self.doc.save_changes()
+            if not self._save_document():
+                return True
 
-        return response == Gtk.ResponseType.CANCEL or (reload and Gtk.ResponseType == Gtk.ResponseType.YES)
+        return response == Gtk.ResponseType.CANCEL or (reload and response == Gtk.ResponseType.YES)
 
 
     def save_file_as(self, *args):
@@ -966,7 +967,7 @@ class UI(builder.Builder):
         response = dialog.run()
 
         if response == Gtk.ResponseType.OK:
-            self.doc.save_changes(dialog.get_uri())
+            self._save_document(dialog.get_uri())
 
         dialog.destroy()
 
@@ -1028,9 +1029,28 @@ class UI(builder.Builder):
 
 
     def save_file(self, *args):
-        """ Remove the current document.
+        """ Save the current document, retaining unsaved changes on failure.
         """
-        self.doc.save_changes()
+        return self._save_document()
+
+
+    def _save_document(self, dest_uri=None):
+        """ Report save failures and let close/reload callers keep unsaved work open.
+        """
+        try:
+            if self.doc.save_changes(dest_uri):
+                return True
+        except (OSError, ValueError, GLib.Error):
+            logger.exception('Could not save PDF changes')
+
+        dialog = Gtk.MessageDialog(transient_for=self.p_win, flags=Gtk.DialogFlags.MODAL,
+                                   message_type=Gtk.MessageType.ERROR,
+                                   message_format=_('Could not save the PDF. Your changes remain unsaved.'))
+        dialog.add_button(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+        dialog.set_position(Gtk.WindowPosition.CENTER)
+        dialog.run()
+        dialog.destroy()
+        return False
 
 
     def open_file(self, gaction, target):

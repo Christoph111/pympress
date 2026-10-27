@@ -33,6 +33,7 @@ only rendering itself: the preparation of the target surface must be done
 elsewhere).
 """
 
+import os
 import logging
 logger = logging.getLogger(__name__)
 
@@ -762,13 +763,7 @@ class Document(object):
         self.doc = pop_doc
         self.changes = False
 
-        if uri is not None:
-            uri_parts = urlsplit(uri, scheme='file')
-            self.path = pathlib.Path(url2pathname(uri_parts.path))
-            if uri_parts.scheme == 'file':
-                self.path = pathlib.Path.cwd().joinpath(self.path.name)
-        else:
-            self.path = None
+        self.path = self._local_path(uri) if uri is not None else None
 
         # Pages numbers and labels
         self.nb_pages = 0 if pop_doc is None else self.doc.get_n_pages()
@@ -888,30 +883,45 @@ class Document(object):
 
         Args:
             dest_uri (`str` or `None`): The URI where to save the file, or None to save in-place
+
+        Returns:
+            `bool`: Whether all changes were successfully saved.
         """
         if self.doc is None:
-            return
+            return True
 
-        for page in self.pages_cache.values():
-            for annot in page.get_annotations():
-                page.page.add_annot(annot)
+        target = self.path if dest_uri is None else self._local_path(dest_uri)
+        if target is None:
+            raise ValueError('Saving requires a local file destination')
 
-        if dest_uri is not None and dest_uri != self.uri:
-            if self.doc.save(dest_uri):
-                self.changes = False
-        else:
-            # We can’t overwrite the current file directly, so create a temporary file and then overwrite
-            with tempfile.NamedTemporaryFile('wb', suffix=self.path.suffix, prefix=self.path.stem, dir=self.path.parent,
+        annotations = []
+        temp_path = None
+        try:
+            for page in self.pages_cache.values():
+                for annot in page.get_annotations():
+                    page.page.add_annot(annot)
+                    annotations.append((page.page, annot))
+
+            # Use the same atomic path for Save As, including aliases of the opened file.
+            with tempfile.NamedTemporaryFile('wb', suffix=target.suffix, prefix=target.stem, dir=str(target.parent),
                                              delete=False) as f:
                 temp_path = pathlib.Path(f.name)
 
-            if self.doc.save(temp_path.as_uri()):
-                self.changes = False
-                temp_path.replace(self.path)
-
-        for page in self.pages_cache.values():
-            for annot in page.get_annotations():
-                page.page.remove_annot(annot)
+            if not self.doc.save(temp_path.as_uri()):
+                return False
+            temp_path.replace(target)
+            self.changes = False
+            return True
+        finally:
+            try:
+                if temp_path is not None:
+                    try:
+                        temp_path.unlink()
+                    except FileNotFoundError:
+                        pass
+            finally:
+                for native_page, annot in annotations:
+                    native_page.remove_annot(annot)
 
 
     def guess_notes(self, horizontal, vertical, current_page=0):
@@ -1238,6 +1248,17 @@ class Document(object):
             if f.exists():
                 f.unlink()
         self.temp_files.clear()
+
+
+    @staticmethod
+    def _local_path(uri):
+        """ Decode a local file URI once, retaining its directory and symlink target.
+        """
+        parts = urlsplit(uri, scheme='file')
+        if parts.scheme != 'file' or parts.netloc.lower() not in {'', 'localhost'} or \
+                not parts.path or parts.query or parts.fragment:
+            return None
+        return pathlib.Path(os.path.realpath(url2pathname(parts.path)))
 
 
 class EmptyPage(Page):
