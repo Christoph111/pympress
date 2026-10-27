@@ -110,6 +110,9 @@ msgstr ""
 msgid "Apply"
 msgstr ""
 
+msgid "Apply and show"
+msgstr ""
+
 msgid "Auto"
 msgstr ""
 
@@ -120,6 +123,18 @@ msgid "Blank screen"
 msgstr ""
 
 msgid "Blank/unblank content screen"
+msgstr ""
+
+msgid "Borderless overlay"
+msgstr ""
+
+msgid "Borderless overlay covers the selected display and fades over the windows beneath it. Hidden output leaves the background fully visible."
+msgstr ""
+
+msgid "Borderless overlay needs a desktop that supports window positioning and opacity."
+msgstr ""
+
+msgid "Borderless overlay requires desktop compositing."
 msgstr ""
 
 msgid "Both fields must be part of the current layout."
@@ -142,6 +157,18 @@ msgid "Caused by "
 msgstr ""
 
 msgid "Changes not yet applied"
+msgstr ""
+
+msgid "Choose a valid output mode."
+msgstr ""
+
+msgid "Choose an available display."
+msgstr ""
+
+msgid "Choose an output mode."
+msgstr ""
+
+msgid "Choose output mode, display, and overlay fade"
 msgstr ""
 
 msgid "Choose parameters for automatically playing slides"
@@ -187,6 +214,9 @@ msgstr ""
 msgid "Could not find the file \"{}\""
 msgstr ""
 
+msgid "Could not leave native fullscreen. Select Window and try again."
+msgstr ""
+
 msgid "Could not open file"
 msgstr ""
 
@@ -226,7 +256,14 @@ msgstr ""
 msgid "Discard unapplied changes and reload settings for the current file"
 msgstr ""
 
+msgid "Display"
+msgstr ""
+
 msgid "Display time (s)"
+msgstr ""
+
+#, python-brace-format
+msgid "Display {number} · {name} · {width} × {height}"
 msgstr ""
 
 msgid "Double-click a time to edit it. Clear the field to use the file default."
@@ -272,6 +309,21 @@ msgstr ""
 msgid "Exit highlight on page change"
 msgstr ""
 
+msgid "Fade duration"
+msgstr ""
+
+msgid "Fade duration must be between 0 and 5 seconds."
+msgstr ""
+
+msgid "Fade out"
+msgstr ""
+
+msgid "Fading output in…"
+msgstr ""
+
+msgid "Fading output out…"
+msgstr ""
+
 #, python-brace-format
 msgid "Failed loading pixbuf for pointer \"{}\" from: {}"
 msgstr ""
@@ -314,6 +366,9 @@ msgstr ""
 msgid "Font size in percent; resize slides using the dividers"
 msgstr ""
 
+msgid "Fullscreen"
+msgstr ""
+
 msgid "Fullscreen Presentation running"
 msgstr ""
 
@@ -330,6 +385,9 @@ msgid "Go to page number"
 msgstr ""
 
 msgid "Gtk.Application.inhibit failed preventing screensaver, trying hard disabling"
+msgstr ""
+
+msgid "Hide"
 msgstr ""
 
 msgid "Highlight"
@@ -414,6 +472,9 @@ msgid "Missing dependency: python \"{}\" package"
 msgstr ""
 
 msgid "Missing file"
+msgstr ""
+
+msgid "Mode"
 msgstr ""
 
 msgid "Monitoring of changes to reload files automatically is not available"
@@ -503,6 +564,27 @@ msgid "Open file"
 msgstr ""
 
 msgid "Open..."
+msgstr ""
+
+msgid "Output"
+msgstr ""
+
+msgid "Output fade duration must be between 0 and 5 seconds."
+msgstr ""
+
+msgid "Output hidden"
+msgstr ""
+
+msgid "Output settings…"
+msgstr ""
+
+msgid "Output visible"
+msgstr ""
+
+msgid "Output · Pympress"
+msgstr ""
+
+msgid "Overlay fade"
 msgstr ""
 
 msgid "Overrides the detection from the file."
@@ -728,10 +810,22 @@ msgstr ""
 msgid "Should not require hard enable/disable screensaver on Linux"
 msgstr ""
 
+msgid "Show"
+msgstr ""
+
+msgid "Show / hide"
+msgstr ""
+
 msgid "Show all fields"
 msgstr ""
 
 msgid "Show deck overview"
+msgstr ""
+
+msgid "Show or hide audience output (F10)"
+msgstr ""
+
+msgid "Show or hide output"
 msgstr ""
 
 msgid "Show or hide the file list (Shift+L)"
@@ -864,10 +958,22 @@ msgstr ""
 msgid "The open file was modified outside of pympress but you have made unsaved changes."
 msgstr ""
 
+msgid "The output display was disconnected. Output is hidden."
+msgstr ""
+
+msgid "The output window is not available."
+msgstr ""
+
 msgid "The page number is invalid."
 msgstr ""
 
 msgid "The per-page timing settings are invalid or too large."
+msgstr ""
+
+msgid "The saved output display is unavailable. Choose a display in Output settings."
+msgstr ""
+
+msgid "The selected display is no longer available."
 msgstr ""
 
 msgid "The slide duration must be between 0.1 and 86,400 seconds."
@@ -954,6 +1060,9 @@ msgstr ""
 msgid "Unknow widget {} to be fullscreened, aborting."
 msgstr ""
 
+msgid "Unknown display"
+msgstr ""
+
 msgid "Unknown presenter field"
 msgstr ""
 
@@ -990,6 +1099,12 @@ msgid "Use transitions for this file"
 msgstr ""
 
 msgid "Validate goto/jump destination"
+msgstr ""
+
+msgid "Waiting for the native fullscreen exit…"
+msgstr ""
+
+msgid "Window"
 msgstr ""
 
 msgid "Windows"

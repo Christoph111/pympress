@@ -342,12 +342,26 @@ class TransitionTests(unittest.TestCase):
     def policy_ui(self):
         ui = self.policy_class()
         ui._opening_entry = None
+        ui.c_win = object()
+        ui._fullscreen_pending_target = mock.Mock(return_value=None)
         ui.current_page = 2
         entry = types.SimpleNamespace(transition_enabled=True, duration_for_page=mock.Mock(return_value=4.))
         ui.file_list = types.SimpleNamespace(current=entry, transition_style='fade', transition_seconds=.75)
-        ui.transition = types.SimpleNamespace(prepare=mock.Mock(), remaining=.5)
+        ui.transition = types.SimpleNamespace(prepare=mock.Mock(), cancel=mock.Mock(), remaining=.5)
         ui.playback = types.SimpleNamespace(paused=False)
         return ui
+
+    def test_native_fullscreen_entry_or_exit_suppresses_a_second_slide_fade(self):
+        for pending in (True, False):
+            with self.subTest(pending=pending):
+                ui = self.policy_ui()
+                ui._fullscreen_pending_target.return_value = pending
+                ui._prepare_transition()
+                ui.transition.cancel.assert_called_once_with()
+                ui.transition.prepare.assert_not_called()
+                ui._fullscreen_pending_target.return_value = None
+                ui._prepare_transition()
+                ui.transition.prepare.assert_called_once_with(.75)
 
     def test_entry_override_and_cut_policy_control_fade(self):
         ui = self.policy_ui()

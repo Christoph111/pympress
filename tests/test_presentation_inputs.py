@@ -82,12 +82,17 @@ class FakeWindow:
         self.realized = realized
         self.fullscreen = mock.Mock()
         self.unfullscreen = mock.Mock()
+        self.fullscreen_on_monitor = mock.Mock()
+        self.screen = types.SimpleNamespace(get_monitor_at_window=mock.Mock(return_value=0))
 
     def get_window(self):
         return self if self.realized else None
 
     def get_state(self):
         return self.state
+
+    def get_screen(self):
+        return self.screen
 
 
 def extracted_class(path, class_name, method_names, globals_):
@@ -114,11 +119,13 @@ def load_callbacks(source):
     spec.loader.exec_module(filelist)
     gtk = types.SimpleNamespace(drag_finish=mock.Mock())
     globals_ = {'Gtk': gtk, 'Gdk': types.SimpleNamespace(WindowState=WindowState),
-                'GLib': types.SimpleNamespace(Variant=Variant, get_current_time=lambda: 12345),
+                'GLib': types.SimpleNamespace(Variant=Variant, get_current_time=lambda: 12345,
+                                              get_monotonic_time=mock.Mock(return_value=0)),
                 'logger': logging.getLogger('input_callbacks_under_test'),
                 'filelist': filelist, '_': lambda text: text}
     ui = extracted_class(source / 'pympress' / 'ui.py', 'UI',
                          {'cancel_current_input', 'exit_fullscreen', 'switch_fullscreen',
+                          '_request_fullscreen', '_fullscreen_pending_target', 'on_window_state_event',
                           'file_list_drop', 'on_drag_drop', 'on_drop_request'}, globals_)
     app = extracted_class(source / 'pympress' / 'app.py', 'Pympress', {'do_open'}, globals_)
     return ui, app, gtk
@@ -126,6 +133,11 @@ def load_callbacks(source):
 
 class FullscreenInputTests(unittest.TestCase):
     ui_class = None
+
+    def setUp(self):
+        self.clock = self.ui_class._request_fullscreen.__globals__['GLib'].get_monotonic_time
+        self.clock.reset_mock(return_value=True, side_effect=True)
+        self.clock.return_value = 0
 
     def assert_screensaver_released(self, ui):
         self.assertTrue(ui.set_screensaver.called)
@@ -139,6 +151,7 @@ class FullscreenInputTests(unittest.TestCase):
         ui.p_win = FakeWindow(p_native, p_realized)
         ui.app = FakeApplication(c_action, p_action)
         ui.set_screensaver = mock.Mock()
+        ui.transition = types.SimpleNamespace(cancel=mock.Mock())
         for name in ('page_number', 'est_time', 'zoom', 'scribbler', 'deck', 'annotations'):
             setattr(ui, name, types.SimpleNamespace(try_cancel=mock.Mock(return_value=False)))
         ui.autoplay = types.SimpleNamespace(stop_looping=mock.Mock(return_value=False))
@@ -220,6 +233,120 @@ class FullscreenInputTests(unittest.TestCase):
         ui.p_win.fullscreen.assert_called_once()
         ui.p_win.unfullscreen.assert_not_called()
         self.assertTrue(action.state)
+
+    def test_unrealized_normal_window_does_not_create_phantom_exit_request(self):
+        ui = self.ui(c_realized=False)
+        self.assertFalse(ui._request_fullscreen(ui.c_win, False))
+        ui.c_win.unfullscreen.assert_not_called()
+        self.assertIsNone(ui._fullscreen_pending_target(ui.c_win))
+
+    def test_repeated_toggle_before_native_event_sends_one_entry_request(self):
+        ui = self.ui()
+        action = ui.app.lookup_action('content-fullscreen')
+        ui.switch_fullscreen(action, None)
+        ui.switch_fullscreen(action, None)
+        ui.c_win.fullscreen.assert_called_once()
+        ui.c_win.unfullscreen.assert_not_called()
+        self.assertIs(ui._fullscreen_pending_target(ui.c_win), True)
+        self.assertTrue(action.state)
+
+    def test_failed_native_acknowledgement_allows_retry_at_monotonic_deadline(self):
+        ui = self.ui()
+        self.assertTrue(ui._request_fullscreen(ui.c_win, True))
+        self.clock.return_value = 4999999
+        self.assertFalse(ui._request_fullscreen(ui.c_win, True))
+        self.clock.return_value = 5000000
+        self.assertTrue(ui._request_fullscreen(ui.c_win, True))
+        self.assertEqual(ui.c_win.fullscreen.call_count, 2)
+
+    def test_matching_native_event_clears_only_that_windows_pending_request(self):
+        ui = self.ui()
+        ui._request_fullscreen(ui.c_win, True)
+        ui._request_fullscreen(ui.p_win, True)
+        ui.c_win.state = WindowState.FULLSCREEN
+        event = types.SimpleNamespace(changed_mask=WindowState.FULLSCREEN,
+                                      new_window_state=WindowState.FULLSCREEN)
+        self.assertFalse(ui.on_window_state_event(ui.c_win, event))
+        self.assertIsNone(ui._fullscreen_pending_target(ui.c_win))
+        self.assertIs(ui._fullscreen_pending_target(ui.p_win), True)
+        self.assertTrue(ui.app.get_action_state('content-fullscreen'))
+
+    def test_normal_native_event_without_pending_request_is_supported(self):
+        ui = self.ui()
+        event = types.SimpleNamespace(changed_mask=WindowState.FULLSCREEN,
+                                      new_window_state=WindowState.FULLSCREEN)
+        self.assertFalse(ui.on_window_state_event(ui.c_win, event))
+        self.assertTrue(ui.app.get_action_state('content-fullscreen'))
+        ui.set_screensaver.assert_called_once_with(disabled=True)
+
+    def test_settled_native_mode_and_monitor_do_not_restart_fullscreen(self):
+        ui = self.ui(c_native=WindowState.FULLSCREEN)
+        self.assertFalse(ui._request_fullscreen(ui.c_win, True, monitor=0))
+        ui.c_win.fullscreen.assert_not_called()
+        ui.c_win.fullscreen_on_monitor.assert_not_called()
+        ui.transition.cancel.assert_not_called()
+
+    def test_different_monitor_is_requested_once_while_pending(self):
+        ui = self.ui(c_native=WindowState.FULLSCREEN)
+        self.assertTrue(ui._request_fullscreen(ui.c_win, True, monitor=1))
+        self.assertFalse(ui._request_fullscreen(ui.c_win, True, monitor=1))
+        ui.c_win.fullscreen_on_monitor.assert_called_once_with(ui.c_win.screen, 1)
+
+    def test_settled_windowed_state_does_not_issue_native_request(self):
+        ui = self.ui()
+        self.assertFalse(ui._request_fullscreen(ui.c_win, False))
+        ui.c_win.unfullscreen.assert_not_called()
+        self.assertIsNone(ui._fullscreen_pending_target(ui.c_win))
+
+    def test_escape_cancels_pending_entry_before_native_fullscreen_exists(self):
+        ui = self.ui()
+        ui._request_fullscreen(ui.c_win, True)
+        self.assertTrue(ui.exit_fullscreen())
+        ui.c_win.unfullscreen.assert_called_once()
+        self.assertIs(ui._fullscreen_pending_target(ui.c_win), False)
+        self.assertFalse(ui.app.get_action_state('content-fullscreen'))
+
+    def test_late_entry_event_retries_superseding_exit_instead_of_reentering(self):
+        ui = self.ui()
+        ui._request_fullscreen(ui.c_win, True)
+        ui._request_fullscreen(ui.c_win, False)
+        ui.c_win.state = WindowState.FULLSCREEN
+        event = types.SimpleNamespace(changed_mask=WindowState.FULLSCREEN,
+                                      new_window_state=WindowState.FULLSCREEN)
+        ui.on_window_state_event(ui.c_win, event)
+        self.assertEqual(ui.c_win.unfullscreen.call_count, 2)
+        ui.c_win.fullscreen.assert_called_once()
+        self.assertIs(ui._fullscreen_pending_target(ui.c_win), False)
+        ui.c_win.state = 0
+        event.new_window_state = 0
+        ui.on_window_state_event(ui.c_win, event)
+        self.assertIsNone(ui._fullscreen_pending_target(ui.c_win))
+        self.assertFalse(ui.app.get_action_state('content-fullscreen'))
+
+    def test_repeated_exit_request_is_ignored_until_acknowledged(self):
+        ui = self.ui(c_native=WindowState.FULLSCREEN)
+        self.assertTrue(ui._request_fullscreen(ui.c_win, False))
+        self.assertFalse(ui._request_fullscreen(ui.c_win, False))
+        ui.c_win.unfullscreen.assert_called_once()
+
+    def test_native_failure_releases_pending_guard_for_immediate_retry(self):
+        ui = self.ui()
+        ui.c_win.fullscreen.side_effect = RuntimeError('native request rejected')
+        with self.assertRaisesRegex(RuntimeError, 'native request rejected'):
+            ui._request_fullscreen(ui.c_win, True)
+        self.assertIsNone(ui._fullscreen_pending_target(ui.c_win))
+        ui.c_win.fullscreen.side_effect = None
+        self.assertTrue(ui._request_fullscreen(ui.c_win, True))
+        self.assertEqual(ui.c_win.fullscreen.call_count, 2)
+
+    def test_slide_fade_is_cancelled_before_one_native_mode_change(self):
+        ui = self.ui()
+        calls = []
+        ui.transition.cancel.side_effect = lambda: calls.append('cancel slide fade')
+        ui.c_win.fullscreen.side_effect = lambda: calls.append('enter native fullscreen')
+        ui._request_fullscreen(ui.c_win, True)
+        ui._request_fullscreen(ui.c_win, True)
+        self.assertEqual(calls, ['cancel slide fade', 'enter native fullscreen'])
 
 
 class DropInputTests(unittest.TestCase):

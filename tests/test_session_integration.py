@@ -123,11 +123,13 @@ def load_ui(source):
     names = {'_playback_entry', '_current_play_delay', '_playback_state_changed', 'playback_toggle',
              'playback_stop', 'playback_settings_changed', '_advance_playback', '_prepare_transition',
              'file_list_activate', 'file_list_next', 'file_list_previous', 'goto_page', 'doc_goto_next',
-             'doc_goto_prev', 'do_page_change', 'cancel_current_input', 'exit_fullscreen'}
+             'doc_goto_prev', 'do_page_change', 'cancel_current_input', 'exit_fullscreen',
+             '_request_fullscreen', '_fullscreen_pending_target'}
     methods = [node for node in ui.body if isinstance(node, ast.FunctionDef) and node.name in names]
     selected = ast.Module(body=[ast.ClassDef(name='SessionUI', bases=[], keywords=[], body=methods,
                                              decorator_list=[])], type_ignores=[])
-    namespace = {'Gdk': types.SimpleNamespace(WindowState=WindowState)}
+    namespace = {'Gdk': types.SimpleNamespace(WindowState=WindowState),
+                 'GLib': types.SimpleNamespace(get_monotonic_time=lambda: 0)}
     exec(compile(ast.fix_missing_locations(selected), str(path), 'exec'), namespace)
     return namespace['SessionUI'], filelist, playback.PlaybackController, transitions.FadeTimeline
 

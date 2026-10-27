@@ -1646,3 +1646,118 @@ msgstr ""
 msgid "↓ Move down"
 msgstr ""
 
+msgid "Apply and show"
+msgstr ""
+
+msgid "Borderless overlay"
+msgstr ""
+
+msgid "Borderless overlay covers the selected display and fades over the windows beneath it. Hidden output leaves the background fully visible."
+msgstr ""
+
+msgid "Borderless overlay needs a desktop that supports window positioning and opacity."
+msgstr ""
+
+msgid "Borderless overlay requires desktop compositing."
+msgstr ""
+
+msgid "Choose a valid output mode."
+msgstr ""
+
+msgid "Choose an available display."
+msgstr ""
+
+msgid "Choose an output mode."
+msgstr ""
+
+msgid "Choose output mode, display, and overlay fade"
+msgstr ""
+
+msgid "Could not leave native fullscreen. Select Window and try again."
+msgstr ""
+
+msgid "Display"
+msgstr ""
+
+#, python-brace-format
+msgid "Display {number} · {name} · {width} × {height}"
+msgstr ""
+
+msgid "Fade duration"
+msgstr ""
+
+msgid "Fade duration must be between 0 and 5 seconds."
+msgstr ""
+
+msgid "Fade out"
+msgstr ""
+
+msgid "Fading output in…"
+msgstr ""
+
+msgid "Fading output out…"
+msgstr ""
+
+msgid "Fullscreen"
+msgstr ""
+
+msgid "Hide"
+msgstr ""
+
+msgid "Mode"
+msgstr ""
+
+msgid "Output"
+msgstr ""
+
+msgid "Output fade duration must be between 0 and 5 seconds."
+msgstr ""
+
+msgid "Output hidden"
+msgstr ""
+
+msgid "Output settings…"
+msgstr ""
+
+msgid "Output visible"
+msgstr ""
+
+msgid "Output · Pympress"
+msgstr ""
+
+msgid "Overlay fade"
+msgstr ""
+
+msgid "Show"
+msgstr ""
+
+msgid "Show / hide"
+msgstr ""
+
+msgid "Show or hide audience output (F10)"
+msgstr ""
+
+msgid "Show or hide output"
+msgstr ""
+
+msgid "The output display was disconnected. Output is hidden."
+msgstr ""
+
+msgid "The output window is not available."
+msgstr ""
+
+msgid "The saved output display is unavailable. Choose a display in Output settings."
+msgstr ""
+
+msgid "The selected display is no longer available."
+msgstr ""
+
+msgid "Unknown display"
+msgstr ""
+
+msgid "Waiting for the native fullscreen exit…"
+msgstr ""
+
+msgid "Window"
+msgstr ""
+

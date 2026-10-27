@@ -46,6 +46,14 @@
 
     <submenu>
         <attribute name="label" translatable="yes">_Presentation</attribute>
+        <item>
+            <attribute name="label" translatable="yes">Output settings…</attribute>
+            <attribute name="action">app.show-output</attribute>
+        </item>
+        <item>
+            <attribute name="label" translatable="yes">Show or hide output</attribute>
+            <attribute name="action">app.output-toggle</attribute>
+        </item>
 		<item>
 			<attribute name="label" translatable="yes">_Pause timer</attribute>
 			<attribute name="action">app.pause-timer</attribute>

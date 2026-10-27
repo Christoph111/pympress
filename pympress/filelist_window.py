@@ -136,6 +136,8 @@ class FileListWindow(Gtk.ApplicationWindow):
             widget.connect('drag-drop', ui.on_drop_request)
             widget.connect('drag-data-received', self._on_drop)
 
+        from pympress.macos_overlay import prepare_independent_window
+        prepare_independent_window(self)
         layout.show_all()
         self.refresh()
 

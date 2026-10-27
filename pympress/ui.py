@@ -49,7 +49,7 @@ from gi.repository import GObject, Gtk, Gdk, GLib, GdkPixbuf, Gio
 
 from pympress import (
     document, surfacecache, util, pointer, scribble, deck, builder, talk_time, dialog, extras, editable_label,
-    filelist, image_document, playback, transitions
+    filelist, image_document, playback, transitions, output
 )
 
 
@@ -192,6 +192,8 @@ class UI(builder.Builder):
         self.image_document = None
         self.presenter_tools = None
         self.playback_window = None
+        self.output_window = None
+        self.output = None
         self.transition = None
         self._opening_entry = None
         self._playback_advancing = False
@@ -233,6 +235,8 @@ class UI(builder.Builder):
 
         c_full = self.config.getboolean('content', 'start_fullscreen')
         p_full = self.config.getboolean('presenter', 'start_fullscreen')
+        if self.config.get('content', 'output_mode', fallback='legacy') != 'legacy':
+            c_full = False  # The explicit output controller applies its native mode after initialization.
         self.setup_actions({
             'quit':                  dict(activate=self.app.quit),
             'about':                 dict(activate=self.menu_about),
@@ -263,6 +267,8 @@ class UI(builder.Builder):
             'next-file': dict(activate=self.file_list_next),
             'previous-file': dict(activate=self.file_list_previous),
             'show-playback': dict(activate=self.show_playback),
+            'show-output': dict(activate=self.show_output),
+            'output-toggle': dict(activate=self.toggle_output),
             'playback-toggle': dict(activate=self.playback_toggle),
             'playback-stop': dict(activate=self.playback_stop),
             'list-recent-files': dict(change_state=self.populate_recent_menu, state=False),
@@ -307,9 +313,13 @@ class UI(builder.Builder):
         # Initialize windows
         self.make_cwin()
         self.make_pwin()
+        from pympress.macos_overlay import prepare_independent_window
+        for window in (self.c_win, self.p_win):
+            prepare_independent_window(window)
 
         self.connect_signals(self)
         self.transition = transitions.Crossfade(self)
+        self.output = output.OutputController(self)
         from pympress.presenter_tools import PresenterTools
         self.presenter_tools = PresenterTools(self)
         top = self.get_object('bigvbox')
@@ -364,8 +374,14 @@ class UI(builder.Builder):
 
         screen.connect('monitors-changed', self.screens_changed)
 
-        self.c_win.show_all()
         self.p_win.show_all()
+        if self.output.explicit_mode:
+            if self.output.mode == 'overlay' or not self.output.monitor_available:
+                self.output.hide(immediate=True)
+            else:
+                self.output.apply(self.output.mode, self.output.monitor_index, self.output.fade_seconds)
+        else:
+            self.c_win.show_all()
         self.presenter_tools.refresh()
 
         # Queue some redraws
@@ -520,6 +536,9 @@ class UI(builder.Builder):
         Args:
             screen (:class:`~Gdk.Screen`):  the screen
         """
+        controller = getattr(self, 'output', None)
+        if controller is not None:
+            controller.screen_layout_changed()
         self.setup_screens(screen, 'at monitors-changed event')
         GLib.timeout_add(1000, self.setup_screens, screen, 'delayed after monitors-changed event')
 
@@ -548,7 +567,21 @@ class UI(builder.Builder):
 
         c_full = self.config.getboolean('content', 'start_fullscreen')
         p_full = self.config.getboolean('presenter', 'start_fullscreen')
+        controller = getattr(self, 'output', None)
+        if controller is not None and controller.explicit_mode:
+            c_full = controller.mode == 'fullscreen' and controller.visible and controller.monitor_available
         wayland = type(display).__name__ == 'GdkWaylandDisplay'
+
+        if controller is not None and controller.explicit_mode:
+            # An explicit audience destination must survive the delayed monitor
+            # callback without being moved by legacy automatic screen swapping.
+            self._request_fullscreen(self.p_win, p_full, p_monitor.monitor_number if p_full else None)
+            if controller.mode != 'overlay':
+                self._request_fullscreen(self.c_win, c_full, controller.monitor_index if c_full else None)
+                self.set_screensaver(disabled=c_full)
+            self.app.set_action_state('content-fullscreen', c_full)
+            self.app.set_action_state('presenter-fullscreen', p_full)
+            return
 
         if not c_full and not p_full or c_monitor is None or p_monitor is None:
             return
@@ -578,18 +611,20 @@ class UI(builder.Builder):
                 p_monitor = primary
 
         if p_full:
-            self.p_win.fullscreen_on_monitor(self.p_win.get_screen(), p_monitor.monitor_number)
+            self._request_fullscreen(self.p_win, True, p_monitor.monitor_number)
         elif not wayland:
-            self.p_win.unfullscreen()
+            self._request_fullscreen(self.p_win, False)
 
-        if c_full:
-            self.c_win.fullscreen_on_monitor(self.c_win.get_screen(), c_monitor.monitor_number)
+        if controller is not None and controller.mode == 'overlay':
+            c_full = False
+        elif c_full:
+            self._request_fullscreen(self.c_win, True, c_monitor.monitor_number)
             self.set_screensaver(True)
         else:
             # Let Wayland do its own un-fullscreening as we can’t move the windows afterwards and messing with it
             # results in a non-fullscreen window that is out of bounds of the remaining monitors.
             if not wayland:
-                self.c_win.unfullscreen()
+                self._request_fullscreen(self.c_win, False)
             self.set_screensaver(False)
 
         self.app.set_action_state('content-fullscreen', c_full)
@@ -710,7 +745,9 @@ class UI(builder.Builder):
             self.adjust_bottom_bar_font()
 
         elif widget is self.c_win and win_state == 0:
-            self.config.set('content', 'geometry', geom)
+            controller = getattr(self, 'output', None)
+            if controller is None or controller.mode != 'overlay':
+                self.config.set('content', 'geometry', geom)
 
 
     def adjust_bottom_bar_font(self):
@@ -773,6 +810,10 @@ class UI(builder.Builder):
         self.scribbler.disable_scribbling()
         self.playback.stop()
         self.transition.cancel()
+        if self.output is not None:
+            self.output.cleanup()
+        if self.output_window is not None:
+            self.output_window.hide()
         if self.playback_window is not None:
             self.playback_window.hide()
         self.medias.hide_all()
@@ -979,6 +1020,22 @@ class UI(builder.Builder):
         self.playback_window.present()
 
 
+    def show_output(self, *args):
+        """Open independent output-mode, display, and fade controls."""
+        if self.output_window is None:
+            from pympress.output_window import OutputWindow
+            self.output_window = OutputWindow(self)
+        self.output_window.present()
+
+
+    def toggle_output(self, *args):
+        """Show or hide audience output without affecting slide playback."""
+        try:
+            self.output.toggle()
+        except (ValueError, RuntimeError, OSError) as error:
+            self.file_list_error(error)
+
+
     @staticmethod
     def _schedule_playback(seconds, callback):
         """Schedule one callback using a bounded GLib timeout."""
@@ -1089,6 +1146,9 @@ class UI(builder.Builder):
 
     def _prepare_transition(self):
         """Capture the old slide when the incoming entry permits a crossfade."""
+        if self._fullscreen_pending_target(self.c_win) is not None:
+            self.transition.cancel()
+            return
         entry = self._playback_entry()
         seconds = (self.file_list.transition_seconds if self.file_list.transition_style == 'fade' and
                    (entry is None or entry.transition_enabled) else 0.0)
@@ -2009,6 +2069,64 @@ class UI(builder.Builder):
             return True
 
 
+    def _fullscreen_pending_target(self, widget):
+        """Return an unacknowledged native target until its five-second deadline."""
+        requests = getattr(self, '_fullscreen_requests', {})
+        request = requests.get(widget)
+        if request is None:
+            return None
+        if GLib.get_monotonic_time() / 1000000.0 - request[2] >= 5.0:
+            requests.pop(widget, None)
+            return None
+        return request[0]
+
+
+    def _request_fullscreen(self, widget, enabled, monitor=None):
+        """Request a native mode change once, allowing retry if no event arrives.
+
+        An opposite pending request must be cancelled even when the native state
+        already matches the new target. Native events acknowledge requests;
+        optimistic action state alone does not prove a request is pending.
+        """
+        enabled = bool(enabled)
+        monitor = monitor if enabled else None
+        self._fullscreen_pending_target(widget)
+        requests = getattr(self, '_fullscreen_requests', None)
+        if requests is None:
+            self._fullscreen_requests = requests = {}
+        pending = requests.get(widget)
+        if pending is not None and pending[:2] == (enabled, monitor):
+            return False
+
+        native = widget.get_window()
+        fullscreen = native is not None and bool(native.get_state() & Gdk.WindowState.FULLSCREEN)
+        same_monitor = (not enabled or monitor is None or native is None or
+                        widget.get_screen().get_monitor_at_window(native) == monitor)
+        name = 'content-fullscreen' if widget is self.c_win else 'presenter-fullscreen'
+        # Preserve Escape cancellation of older, untracked optimistic requests.
+        untracked_entry = not enabled and self.app.get_action_state(name)
+        if native is None and not enabled and pending is None and not untracked_entry:
+            return False
+        if native is not None and fullscreen == enabled and same_monitor and pending is None and not untracked_entry:
+            return False
+
+        transition = getattr(self, 'transition', None)
+        if transition is not None:
+            transition.cancel()
+        requests[widget] = (enabled, monitor, GLib.get_monotonic_time() / 1000000.0)
+        try:
+            if enabled and monitor is not None:
+                widget.fullscreen_on_monitor(widget.get_screen(), monitor)
+            elif enabled:
+                widget.fullscreen()
+            else:
+                widget.unfullscreen()
+        except Exception:
+            requests.pop(widget, None)
+            raise
+        return True
+
+
     def switch_fullscreen(self, gaction, target):
         """ Switch the Content window to fullscreen (if in normal mode) or to normal mode (if fullscreen).
 
@@ -2022,6 +2140,10 @@ class UI(builder.Builder):
             `bool`: whether some window's full screen status got toggled
         """
         if gaction.get_name() == 'content-fullscreen':
+            controller = getattr(self, 'output', None)
+            if controller is not None and controller.mode == 'overlay':
+                self.toggle_output()
+                return True
             widget = self.c_win
         elif gaction.get_name() == 'presenter-fullscreen':
             widget = self.p_win
@@ -2037,10 +2159,7 @@ class UI(builder.Builder):
                      else gaction.get_state().get_boolean())
         toggle_to = not cur_state
 
-        if cur_state:
-            widget.unfullscreen()
-        else:
-            widget.fullscreen()
+        self._request_fullscreen(widget, toggle_to)
 
         if gaction.get_name() == 'content-fullscreen':
             self.set_screensaver(disabled=toggle_to)
@@ -2051,12 +2170,16 @@ class UI(builder.Builder):
 
     def exit_fullscreen(self):
         """Exit native or pending fullscreen requests in both presentation windows."""
-        changed = False
+        controller = getattr(self, 'output', None)
+        changed = controller is not None and controller.mode == 'overlay' and controller.visible
+        if changed:
+            controller.hide()
         for widget, name in ((self.c_win, 'content-fullscreen'), (self.p_win, 'presenter-fullscreen')):
             native = widget.get_window()
             fullscreen = native is not None and native.get_state() & Gdk.WindowState.FULLSCREEN
-            if fullscreen or self.app.get_action_state(name):
-                widget.unfullscreen()
+            pending = self._fullscreen_pending_target(widget)
+            if fullscreen or self.app.get_action_state(name) or pending is True:
+                self._request_fullscreen(widget, False)
                 self.app.set_action_state(name, False)
                 if widget is self.c_win:
                     self.set_screensaver(disabled=False)
@@ -2069,10 +2192,19 @@ class UI(builder.Builder):
         if event.changed_mask & Gdk.WindowState.FULLSCREEN:
             name = 'content-fullscreen' if widget is self.c_win else 'presenter-fullscreen'
             fullscreen = bool(event.new_window_state & Gdk.WindowState.FULLSCREEN)
+            pending = self._fullscreen_pending_target(widget)
+            if pending is not None:
+                request = self._fullscreen_requests.pop(widget)
+                if pending is not fullscreen:
+                    # A superseded entry can finish after Escape requested exit.
+                    self._request_fullscreen(widget, pending, request[1])
             previous = self.app.get_action_state(name)
             self.app.set_action_state(name, fullscreen)
             if widget is self.c_win and previous != fullscreen:
                 self.set_screensaver(disabled=fullscreen)
+            controller = getattr(self, 'output', None)
+            if widget is self.c_win and controller is not None:
+                controller.native_state_changed(fullscreen)
         return False
 
 

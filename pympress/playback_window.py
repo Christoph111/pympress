@@ -159,6 +159,8 @@ class PlaybackWindow(Gtk.ApplicationWindow):
         self.transition_adjustment.connect('value-changed', self._mark_dirty)
         self.default_seconds.connect('value-changed', self._default_changed)
         self.transition_enabled.connect('toggled', self._mark_dirty)
+        from pympress.macos_overlay import prepare_independent_window
+        prepare_independent_window(self)
         layout.show_all()
         self.refresh()
 

@@ -69,6 +69,8 @@ class PresenterTools:
         self.widget.pack_start(brand, False, False, 0)
         self._button(_('File list'), 'show-file-list', tooltip=_('Show or hide the file list (Shift+L)'))
         self._button(_('Playback'), 'show-playback', tooltip=_('Configure playback and transitions'))
+        self._button(_('Output'), 'show-output', tooltip=_('Choose output mode, display, and overlay fade'))
+        self._button(_('Show / hide'), 'output-toggle', tooltip=_('Show or hide audience output (F10)'))
         self._button(_('Laser'), 'pointer-mode', 'toggle', _('Toggle the laser pointer (L)'))
 
         fields_button = Gtk.MenuButton(label=_('Fields'))
