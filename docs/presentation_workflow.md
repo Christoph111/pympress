@@ -1,6 +1,6 @@
 # Presentation workflow
 
-Pympress separates the audience's **Content** window from the **Presenter** console. The file list and playback controls are independent, nonmodal windows: moving or closing them does not move the presentation windows. Closing either management window hides it so it can be opened again.
+Pympress separates the audience's **Content** window from the **Presenter** console. The file list can be docked in the Presenter or used as an independent window. Playback controls are independent and nonmodal; moving them does not move the presentation windows. Closing either management window hides it so it can be opened again.
 
 ## Windows and keyboard controls
 
@@ -11,6 +11,7 @@ The presentation shortcuts in this table apply when the **Presenter** or **Conte
 | Action | Default control |
 | --- | --- |
 | Show or hide the file list | **Shift+L**, **Primary+Shift+L**, the **File list** button, or **File → File list…**. The explicit **Ctrl+Shift+L** shortcut remains available. |
+| Dock or undock the file list | **Primary+Shift+D**, the **Dock / Undock** button, or **File → Dock file list in Presenter** |
 | Toggle the persistent laser pointer | **L** |
 | Next file | **Primary+Right** or **Primary+Down**; **Alt+PageDown** is also available. |
 | Previous file | **Primary+Left** or **Primary+Up**; **Alt+PageUp** is also available. |
@@ -94,3 +95,23 @@ A remembered overlay starts hidden. If its saved display is unavailable, choose 
 display explicitly; output does not automatically move onto the remaining operator display.
 Disconnecting an active output display hides output immediately. Wayland cannot supply the
 required per-window positioning/opacity; X11 requires desktop compositing.
+
+## Dock the file list
+
+Open **File list**, then choose **Dock** in its header. The same list moves into a
+left-hand panel beside the Presenter previews. Drag the divider to change its
+width; toolbar and timer controls remain available. Buttons wrap in narrow docks,
+and the Folder column is hidden while file names and missing-file status remain
+visible. Selection, file order and scroll position survive changing hosts.
+
+Choose **Undock** to return to an independent window. **Shift+L** and **Hide** show
+or hide the selected host; **Primary+Shift+D** changes hosts. Mode, visibility and
+dock width are remembered at the next launch. Closing the application preserves
+these preferences.
+
+When focus is inside the dock, typing, list navigation and **Escape** stay local;
+Escape hides the list before it affects the presentation. Clicking a Presenter
+preview returns keyboard control to the presentation. Audience-window keys retain
+their normal slide/output behavior. File dialogs belong to the visible host, and
+dropping files anywhere in the list appends them without interrupting the current
+slide.

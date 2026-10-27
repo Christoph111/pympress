@@ -46,6 +46,7 @@ class FileListWindow(Gtk.ApplicationWindow):
         """Build an independent file-list window and connect its local controls."""
         super(FileListWindow, self).__init__(application=ui.app, title=_('File list · Pympress'))
         self.ui = ui
+        self._dock = None
         self.set_default_size(930, 480)
         self.set_size_request(620, 320)
         self.get_style_context().add_class('pympress-file-list')
@@ -56,8 +57,18 @@ class FileListWindow(Gtk.ApplicationWindow):
         layout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         layout.set_border_width(12)
         self.add(layout)
+        self.panel = layout
+        self.panel.get_style_context().add_class('pympress-file-list')
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        heading = Gtk.Label(label=_('File list'))
+        heading.set_xalign(0)
+        header.pack_start(heading, True, True, 0)
+        self.dock_button = self._button(header, _('Dock'), self._toggle_dock,
+                                        _('Dock the file list in the Presenter'))
+        self._button(header, _('Hide'), lambda *_: self.hide(), _('Hide the file list (Shift+L)'))
+        layout.pack_start(header, False, False, 0)
 
-        files = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        files = self._flow_row()
         files.get_style_context().add_class('console-toolbar')
         layout.pack_start(files, False, False, 0)
         self._button(files, _('Add files…'), self._add_files,
@@ -69,7 +80,7 @@ class FileListWindow(Gtk.ApplicationWindow):
         self.save_button = self._button(files, _('Save list…'), self._save_list,
                                         _('Save the file order as a file list'))
 
-        hint = Gtk.Label(label=_('Drop PDFs and images here. Double-click to open the selected file.'))
+        hint = self.hint = Gtk.Label(label=_('Drop PDFs and images here. Double-click to open the selected file.'))
         hint.set_xalign(0)
         hint.set_line_wrap(True)
         layout.pack_start(hint, False, False, 0)
@@ -86,10 +97,10 @@ class FileListWindow(Gtk.ApplicationWindow):
         self.tree.connect('row-activated', self._row_activated)
         self._column('', self.ACTIVE)
         self._column('#', self.NUMBER)
-        self._column(_('File'), self.NAME, expand=True, width=250)
+        self.name_column = self._column(_('File'), self.NAME, expand=True, width=250)
         self._column(_('Type'), self.KIND)
-        self._column(_('Folder'), self.FOLDER, expand=True, width=230)
-        self._column(_('Status'), self.STATUS, width=150)
+        self.folder_column = self._column(_('Folder'), self.FOLDER, expand=True, width=230)
+        self.status_column = self._column(_('Status'), self.STATUS, width=150)
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -99,13 +110,15 @@ class FileListWindow(Gtk.ApplicationWindow):
         overlay.add(scrolled)
         self.empty_label = Gtk.Label(label=_('No files yet.\nAdd PDFs or images, or drop them here.'))
         self.empty_label.set_justify(Gtk.Justification.CENTER)
+        self.empty_label.set_line_wrap(True)
+        self.empty_label.set_max_width_chars(30)
         self.empty_label.set_halign(Gtk.Align.CENTER)
         self.empty_label.set_valign(Gtk.Align.CENTER)
         overlay.add_overlay(self.empty_label)
         overlay.set_overlay_pass_through(self.empty_label, True)
         layout.pack_start(overlay, True, True, 0)
 
-        edit = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        edit = self._flow_row()
         layout.pack_start(edit, False, False, 0)
         self.open_button = self._button(edit, _('Open'), self._open_selected,
                                         _('Show the selected file (Enter)'))
@@ -118,17 +131,17 @@ class FileListWindow(Gtk.ApplicationWindow):
         self.clear_button = self._button(edit, _('Clear'), self._clear,
                                          _('Clear the file list without deleting any files'))
 
-        playback = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        playback = self._flow_row(maximum=2)
         layout.pack_start(playback, False, False, 0)
         self.previous_button = self._button(playback, _('← Previous file'), self._previous)
         self.next_button = self._button(playback, _('Next file →'), self._next)
         self.summary = Gtk.Label()
         self.summary.set_xalign(0)
         self.summary.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-        playback.pack_start(self.summary, True, True, 6)
+        layout.pack_start(self.summary, False, False, 0)
 
         # Keep the whole window usable as a file drop area, including its empty state.
-        for widget in (self, self.tree):
+        for widget in (self, self.panel, self.tree):
             flags = Gtk.DestDefaults.MOTION | Gtk.DestDefaults.HIGHLIGHT
             widget.drag_dest_set(flags, [], Gdk.DragAction.COPY)
             widget.drag_dest_add_uri_targets()
@@ -148,7 +161,10 @@ class FileListWindow(Gtk.ApplicationWindow):
         if tooltip:
             button.set_tooltip_text(tooltip)
         button.connect('clicked', callback)
-        box.pack_start(button, False, False, 0)
+        if isinstance(box, Gtk.FlowBox):
+            box.add(button)
+        else:
+            box.pack_start(button, False, False, 0)
         return button
 
     def _column(self, title, index, expand=False, width=None):
@@ -163,6 +179,7 @@ class FileListWindow(Gtk.ApplicationWindow):
             column.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
             column.set_fixed_width(width)
         self.tree.append_column(column)
+        return column
 
     def _selected_indices(self):
         """Return selected file positions in ascending list order."""
@@ -203,11 +220,73 @@ class FileListWindow(Gtk.ApplicationWindow):
         self.summary.set_tooltip_text(summary)
         self._update_buttons()
 
+    @staticmethod
+    def _flow_row(maximum=4):
+        """Wrap file-list buttons to remain usable in a narrow Presenter dock."""
+        row = Gtk.FlowBox()
+        row.set_selection_mode(Gtk.SelectionMode.NONE)
+        row.set_min_children_per_line(1)
+        row.set_max_children_per_line(maximum)
+        row.set_row_spacing(4)
+        row.set_column_spacing(4)
+        return row
+
+    def _ensure_dock(self):
+        """Create the one dock owner lazily without copying the list view."""
+        if self._dock is None:
+            from pympress.filelist_dock import FileListDock
+            self._dock = FileListDock(self, self.ui)
+        return self._dock
+
+    def _key_host(self):
+        """Return the visible toplevel used for focus, keys, and modal choosers."""
+        dock = getattr(self, '_dock', None)
+        return self.ui.p_win if dock is not None and dock.docked else self
+
+    def set_compact(self, compact):
+        """Keep names and missing-file status readable while saving dock width."""
+        self.folder_column.set_visible(not compact)
+        self.name_column.set_fixed_width(160 if compact else 250)
+        self.status_column.set_fixed_width(90 if compact else 150)
+        self.hint.set_visible(not compact)
+
+    def update_dock_controls(self, docked):
+        """Show the action that moves this shared panel to its other host."""
+        self.dock_button.set_label(_('Undock') if docked else _('Dock'))
+        self.ui.app.set_action_state('file-list-docked', docked)
+        self.dock_button.set_tooltip_text(_('Open the file list in its own window') if docked else
+                                          _('Dock the file list in the Presenter'))
+
+    def _toggle_dock(self, *_args):
+        """Move the shared list between the Presenter and its independent window."""
+        dock = self._ensure_dock()
+        dock.set_docked(not dock.docked)
+        if not dock.visible:
+            dock.present(refresh=False)
+
+    def toggle(self):
+        """Toggle file-list visibility in its current docked or floating host."""
+        self._ensure_dock().toggle()
+
     def present(self):
-        """Refresh the file list, show its window, and focus the file tree."""
-        self.refresh()
-        super(FileListWindow, self).present()
-        self.tree.grab_focus()
+        """Refresh and focus the same file tree in whichever host is selected."""
+        self._ensure_dock().present()
+
+    def hide(self):
+        """Hide the selected host without changing its docking preference."""
+        dock = getattr(self, '_dock', None)
+        if dock is not None:
+            dock.hide()
+        else:
+            super(FileListWindow, self).hide()
+
+    def cleanup(self):
+        """Hide both hosts at shutdown while retaining the user's visibility preference."""
+        dock = getattr(self, '_dock', None)
+        if dock is not None:
+            dock.cleanup()
+        else:
+            super(FileListWindow, self).hide()
 
     def _update_buttons(self, *_args):
         """Update editing and navigation controls for the current selection."""
@@ -271,10 +350,15 @@ class FileListWindow(Gtk.ApplicationWindow):
         if event.keyval == Gdk.KEY_Escape:
             self.hide()
             return True
-        focused = self.get_focus()
+        host = self._key_host()
+        focused = host.get_focus()
         typing = isinstance(focused, (Gtk.Entry, Gtk.TextView))
         command = event.state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.META_MASK |
                                  Gdk.ModifierType.SUPER_MASK)
+        if (not typing and command and event.state & Gdk.ModifierType.SHIFT_MASK and
+                event.keyval in (Gdk.KEY_d, Gdk.KEY_D)):
+            self._toggle_dock()
+            return True
         if not typing and command and event.keyval in (Gdk.KEY_Left, Gdk.KEY_Up, Gdk.KEY_Right, Gdk.KEY_Down):
             previous = event.keyval in (Gdk.KEY_Left, Gdk.KEY_Up)
             (self.ui.file_list_previous if previous else self.ui.file_list_next)()
@@ -301,7 +385,7 @@ class FileListWindow(Gtk.ApplicationWindow):
             if event.state & Gdk.ModifierType.MOD1_MASK and event.keyval in (Gdk.KEY_Up, Gdk.KEY_Down):
                 self._move_selected(-1 if event.keyval == Gdk.KEY_Up else 1)
                 return True
-        return self._local_key(self, event)
+        return self._local_key(host, event)
 
     def _on_dialog_key_press(self, dialog, event):
         """Preserve local chooser editing, button activation, and cancellation."""
@@ -320,7 +404,7 @@ class FileListWindow(Gtk.ApplicationWindow):
 
     def _chooser(self, title, action):
         """Create a local-only file chooser owned by the file-list window."""
-        dialog = Gtk.FileChooserDialog(title=title, transient_for=self, modal=True, action=action)
+        dialog = Gtk.FileChooserDialog(title=title, transient_for=self._key_host(), modal=True, action=action)
         dialog.add_buttons(_('Cancel'), Gtk.ResponseType.CANCEL,
                            _('Save') if action == Gtk.FileChooserAction.SAVE else _('Open'),
                            Gtk.ResponseType.ACCEPT)

@@ -18,6 +18,10 @@
                 <attribute name="action">app.show-file-list</attribute>
             </item>
             <item>
+                <attribute name="label" translatable="yes">Dock file list in Presenter</attribute>
+                <attribute name="action">app.file-list-docked</attribute>
+            </item>
+            <item>
                 <attribute name="label" translatable="yes">Previous file</attribute>
                 <attribute name="action">app.previous-file</attribute>
             </item>

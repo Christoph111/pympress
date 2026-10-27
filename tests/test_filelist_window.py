@@ -44,6 +44,7 @@ GTK = SimpleNamespace(ApplicationWindow=object, TreePath=TreePath, drag_finish=l
 GDK = SimpleNamespace(KEY_Tab=1, KEY_ISO_Left_Tab=2, KEY_Escape=3, KEY_Return=4, KEY_KP_Enter=5,
                       KEY_Delete=6, KEY_BackSpace=7, KEY_Up=8, KEY_Down=9,
                       KEY_v=ord('v'), KEY_V=ord('V'), KEY_space=ord(' '),
+                      KEY_d=ord('d'), KEY_D=ord('D'),
                       KEY_l=ord('l'), KEY_L=ord('L'), KEY_Left=10, KEY_Right=11,
                       ModifierType=SimpleNamespace(SHIFT_MASK=1, MOD1_MASK=2, CONTROL_MASK=4,
                                                    META_MASK=8, SUPER_MASK=16))
@@ -143,6 +144,64 @@ class FileListWindowTests(unittest.TestCase):
 
     def selected_ids(self):
         return [self.window.store[index][self.window.ID] for index in self.window._selected_indices()]
+
+    def test_docked_controls_use_presenter_focus_without_window_accelerators(self):
+        host = SimpleNamespace(get_focus=lambda: GTK.Entry(), propagate_key_event=mock.Mock(return_value=True))
+        self.ui.p_win = host
+        self.window._dock = SimpleNamespace(docked=True)
+        self.ui.file_list_previous = mock.Mock()
+        self.ui.file_list_next = mock.Mock()
+        self.window.get_focus = lambda: self.fail('Hidden native window must not supply focus')
+        event = SimpleNamespace(keyval=GDK.KEY_Left, state=GDK.ModifierType.META_MASK)
+        self.assertTrue(self.window._on_key_press(host, event))
+        host.propagate_key_event.assert_called_once_with(event)
+        self.ui.file_list_previous.assert_not_called()
+        self.ui.file_list_next.assert_not_called()
+
+    def test_docked_file_chooser_belongs_to_the_visible_presenter(self):
+        self.ui.p_win = object()
+        self.window._dock = SimpleNamespace(docked=True)
+        dialog = mock.Mock()
+        with mock.patch.object(GTK, 'FileChooserDialog', create=True, return_value=dialog) as create:
+            self.assertIs(self.window._chooser('Local files', 'open'), dialog)
+        create.assert_called_once_with(title='Local files', transient_for=self.ui.p_win, modal=True, action='open')
+        dialog.set_local_only.assert_called_once_with(True)
+
+    def test_primary_shift_d_toggles_host_from_the_file_list(self):
+        self.window._toggle_dock = mock.Mock()
+        for modifier in (GDK.ModifierType.CONTROL_MASK, GDK.ModifierType.META_MASK,
+                         GDK.ModifierType.SUPER_MASK):
+            for key in (GDK.KEY_d, GDK.KEY_D):
+                with self.subTest(modifier=modifier, key=key):
+                    self.window._toggle_dock.reset_mock()
+                    event = SimpleNamespace(keyval=key, state=modifier | GDK.ModifierType.SHIFT_MASK)
+                    self.assertTrue(self.window._on_key_press(self.window, event))
+                    self.window._toggle_dock.assert_called_once_with()
+
+    def test_docking_shortcut_preserves_text_entry_in_either_host(self):
+        self.window._toggle_dock = mock.Mock()
+        for docked in (False, True):
+            for field in (GTK.Entry(), GTK.TextView()):
+                with self.subTest(docked=docked, field=type(field).__name__):
+                    host = SimpleNamespace(get_focus=lambda: field,
+                                           propagate_key_event=mock.Mock(return_value=True))
+                    self.ui.p_win = host
+                    self.window._dock = SimpleNamespace(docked=docked)
+                    self.window.get_focus = host.get_focus
+                    self.window.propagate_key_event = host.propagate_key_event
+                    event = SimpleNamespace(keyval=GDK.KEY_D,
+                                            state=GDK.ModifierType.META_MASK | GDK.ModifierType.SHIFT_MASK)
+                    self.assertTrue(self.window._on_key_press(host, event))
+                    host.propagate_key_event.assert_called_once_with(event)
+        self.window._toggle_dock.assert_not_called()
+
+    def test_plain_d_or_incomplete_docking_shortcut_keeps_host_unchanged(self):
+        self.window._toggle_dock = mock.Mock()
+        for modifiers in (0, GDK.ModifierType.META_MASK, GDK.ModifierType.SHIFT_MASK):
+            with self.subTest(modifiers=modifiers):
+                event = SimpleNamespace(keyval=GDK.KEY_d, state=modifiers)
+                self.assertTrue(self.window._on_key_press(self.window, event))
+        self.window._toggle_dock.assert_not_called()
 
     def test_block_moves_keep_order_selection_and_current_identity(self):
         self.ui.file_list.set_current(2)

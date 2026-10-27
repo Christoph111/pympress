@@ -264,6 +264,7 @@ class UI(builder.Builder):
             'save-file-as':      dict(activate=self.save_file_as),
             'pick-file':         dict(activate=self.pick_file),
             'show-file-list': dict(activate=self.show_file_list),
+            'file-list-docked': dict(activate=self.toggle_file_list_docked, state=False),
             'next-file': dict(activate=self.file_list_next),
             'previous-file': dict(activate=self.file_list_previous),
             'show-playback': dict(activate=self.show_playback),
@@ -383,6 +384,7 @@ class UI(builder.Builder):
         else:
             self.c_win.show_all()
         self.presenter_tools.refresh()
+        self._restore_file_list_window()
 
         # Queue some redraws
         self.c_da.queue_draw()
@@ -822,7 +824,7 @@ class UI(builder.Builder):
         if self.image_document is not None:
             self.image_document.cleanup()
         if self.file_list_window is not None:
-            self.file_list_window.hide()
+            self.file_list_window.cleanup()
 
         if self.app.get_action_state('content-fullscreen'):
             # In case we used hard-disabling
@@ -1001,15 +1003,35 @@ class UI(builder.Builder):
             self.playback_window.refresh()
 
 
+    def _restore_file_list_window(self):
+        """Restore the saved dock mode and either host's visibility after startup."""
+        try:
+            restore_file_dock = self.config.getboolean('presenter', 'file_list_docked', fallback=False)
+            restore_file_list = self.config.getboolean('presenter', 'file_list_visible', fallback=False)
+        except ValueError:
+            restore_file_dock = restore_file_list = False
+        if restore_file_dock or restore_file_list:
+            from pympress.filelist_window import FileListWindow
+            self.file_list_window = FileListWindow(self)
+            self.file_list_window._ensure_dock()
+            if restore_file_list:
+                self.file_list_window.present()
+
+
     def show_file_list(self, *args):
-        """Toggle the independent file-list window."""
+        """Toggle the file list in its docked or independent host."""
         if self.file_list_window is None:
             from pympress.filelist_window import FileListWindow
             self.file_list_window = FileListWindow(self)
-        if self.file_list_window.get_visible():
-            self.file_list_window.hide()
-        else:
-            self.file_list_window.present()
+        self.file_list_window.toggle()
+
+
+    def toggle_file_list_docked(self, *args):
+        """Switch the file list between the Presenter dock and its own window."""
+        if self.file_list_window is None:
+            from pympress.filelist_window import FileListWindow
+            self.file_list_window = FileListWindow(self)
+        self.file_list_window._toggle_dock()
 
 
     def show_playback(self, *args):
@@ -1885,6 +1907,10 @@ class UI(builder.Builder):
             widget (:class:`~Gtk.Widget`):  the widget which has received the key stroke
             event (:class:`~Gdk.Event`):  the GTK event, which contains the key stroke details
         """
+        view = getattr(self, 'file_list_window', None)
+        dock = getattr(view, '_dock', None)
+        if widget is self.p_win and dock is not None and dock.docked and dock.has_focus():
+            return dock.handle_key(event)
         if event.keyval == Gdk.KEY_Escape:
             return self.cancel_current_input(None) if event.type == Gdk.EventType.KEY_PRESS else True
         if self.annotations.key_event(widget, event):
@@ -1978,6 +2004,11 @@ class UI(builder.Builder):
         Returns:
             `bool`: whether the event was consumed
         """
+        view = getattr(self, 'file_list_window', None)
+        dock = getattr(view, '_dock', None)
+        if (dock is not None and dock.docked and dock.has_focus() and
+                event.type == Gdk.EventType.BUTTON_PRESS and widget.get_toplevel() is self.p_win):
+            self.p_win.set_focus(None)
         if event.type == Gdk.EventType.BUTTON_RELEASE and self.laser.toggle_pointer(widget, event):
             return True
         if self.zoom.toggle_zoom_target(widget, event):

@@ -1713,3 +1713,21 @@ msgstr ""
 msgid "Window"
 msgstr ""
 
+msgid "Dock"
+msgstr ""
+
+msgid "Dock file list in Presenter"
+msgstr ""
+
+msgid "Dock the file list in the Presenter"
+msgstr ""
+
+msgid "Hide the file list (Shift+L)"
+msgstr ""
+
+msgid "Open the file list in its own window"
+msgstr ""
+
+msgid "Undock"
+msgstr ""
+
