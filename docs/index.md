@@ -7,6 +7,7 @@
 
 README.md
 options.md
+presentation_workflow.md
 pympress.md
 ```
 

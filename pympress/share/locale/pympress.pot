@@ -1,3 +1,18 @@
+msgid ""
+"\n"
+"ERROR: Gobject Introspections and/or pycairo module is missing. Make sure Gtk, pygobject and pycairo are installed.\n"
+"\n"
+"Try your operating system’s package manager, and ensure you installed pympress with access to system packages.\n"
+"Typically, this means having installed with:\n"
+"  pipx install --system-site-packages pympress\n"
+"\n"
+"Alternately, ask pip to download and compile pygobject and pycairo, for which you may need the Gtk and cairo headers\n"
+"(or development packages):\n"
+"  pipx inject pympress pygobject pycairo\n"
+"\n"
+"For further instructions, refer to https://github.com/Cimbali/pympress/blob/master/README.md#dependencies\n"
+msgstr ""
+
 msgid "(and optionally seconds)"
 msgstr ""
 
@@ -52,19 +67,47 @@ msgstr ""
 msgid "9th next slide"
 msgstr ""
 
+msgid "A file URI must contain an absolute path."
+msgstr ""
+
+msgid "A file path must be text."
+msgstr ""
+
+#, python-brace-format
+msgid "A presentation can contain at most {} files."
+msgstr ""
+
+msgid "Add PDFs and images"
+msgstr ""
+
+msgid "Add files or file paths from the clipboard (⌘V / Ctrl+V)"
+msgstr ""
+
+msgid "Add files…"
+msgstr ""
+
+msgid "Add multiple PDFs and images to the file list"
+msgstr ""
+
 msgid "Additional features"
 msgstr ""
 
 msgid "Adjust alignment of slides in projector screen"
 msgstr ""
 
+msgid "Advanced layout…"
+msgstr ""
+
 msgid "Align _content"
 msgstr ""
 
-msgid "All files"
+msgid "An image is one slide and uses the file’s display time."
 msgstr ""
 
 msgid "Annotations"
+msgstr ""
+
+msgid "Apply"
 msgstr ""
 
 msgid "Auto"
@@ -79,16 +122,32 @@ msgstr ""
 msgid "Blank/unblank content screen"
 msgstr ""
 
+msgid "Both fields must be part of the current layout."
+msgstr ""
+
 msgid "Cairo can not draw gif"
+msgstr ""
+
+msgid "Cancel"
 msgstr ""
 
 msgid "Cancel goto/jump/highlighting/zooming"
 msgstr ""
 
+#, python-brace-format
+msgid "Cannot use this file path: {}"
+msgstr ""
+
 msgid "Caused by "
 msgstr ""
 
+msgid "Changes not yet applied"
+msgstr ""
+
 msgid "Choose parameters for automatically playing slides"
+msgstr ""
+
+msgid "Clear"
 msgstr ""
 
 msgid "Clear and restore per page label"
@@ -100,6 +159,9 @@ msgstr ""
 msgid "Clear on page change"
 msgstr ""
 
+msgid "Clear the file list without deleting any files"
+msgstr ""
+
 msgid "Clock"
 msgstr ""
 
@@ -109,7 +171,7 @@ msgstr ""
 msgid "Close opened pympress instance"
 msgstr ""
 
-msgid "Content and presenter window must not be on the same monitor if you start full screen!"
+msgid "Configure playback and transitions"
 msgstr ""
 
 msgid "Content blanked"
@@ -121,40 +183,135 @@ msgstr ""
 msgid "Contributors:"
 msgstr ""
 
+#, python-brace-format
 msgid "Could not find the file \"{}\""
+msgstr ""
+
+msgid "Could not open file"
+msgstr ""
+
+#, python-brace-format
+msgid "Could not open the image: {}"
+msgstr ""
+
+#, python-brace-format
+msgid "Could not read the file list: {}"
+msgstr ""
+
+msgid "Could not save the PDF. Your changes remain unsaved."
+msgstr ""
+
+#, python-brace-format
+msgid "Could not save the file list: {}"
+msgstr ""
+
+msgid "Crossfade"
+msgstr ""
+
+msgid "Current file"
 msgstr ""
 
 msgid "Current slide"
 msgstr ""
 
-msgid "ERROR: Gobject Introspections and/or pycairo module is missing, make sure Gtk, pygobject and pycairo are installed on your system."
+msgid "Custom"
+msgstr ""
+
+msgid "Cut"
+msgstr ""
+
+msgid "Discard"
+msgstr ""
+
+msgid "Discard unapplied changes and reload settings for the current file"
+msgstr ""
+
+msgid "Display time (s)"
+msgstr ""
+
+msgid "Double-click a time to edit it. Clear the field to use the file default."
+msgstr ""
+
+msgid "Double-click a time to edit it. Clear the field to use the file default. Only the first 10,000 slides can be edited individually here."
+msgstr ""
+
+msgid "Drop PDFs and images here. Double-click to open the selected file."
+msgstr ""
+
+msgid "Edit groups, orientation, and size distribution"
 msgstr ""
 
 msgid "Edit layout"
 msgstr ""
 
+msgid "Enable “Edit layout” to move fields"
+msgstr ""
+
+msgid "Entire file list"
+msgstr ""
+
 msgid "Error loading icon for about window"
 msgstr ""
 
+#, python-brace-format
 msgid "Error opening the file \"{}\""
 msgstr ""
 
+#, python-brace-format
 msgid "Error parsing option from config file {}.{} \"{}\" to bool"
 msgstr ""
 
+#, python-brace-format
 msgid "Error parsing option from config file {}.{} \"{}\" to float"
 msgstr ""
 
+#, python-brace-format
 msgid "Error parsing option from config file {}.{} \"{}\" to int"
 msgstr ""
 
 msgid "Exit highlight on page change"
 msgstr ""
 
+#, python-brace-format
+msgid "Failed loading pixbuf for pointer \"{}\" from: {}"
+msgstr ""
+
+msgid "Fields"
+msgstr ""
+
+msgid "File"
+msgstr ""
+
+msgid "File default"
+msgstr ""
+
+msgid "File list"
+msgstr ""
+
+msgid "File list · Pympress"
+msgstr ""
+
+msgid "File list…"
+msgstr ""
+
+#, python-brace-format
+msgid "File not found or not a regular file: {}"
+msgstr ""
+
+#, python-brace-format
+msgid "File not found: {}"
+msgstr ""
+
+msgid "File settings"
+msgstr ""
+
 msgid "First slide"
 msgstr ""
 
-msgid "For instructions, refer to https://github.com/Cimbali/pympress/blob/master/README.md#dependencies"
+msgid "Folder"
+msgstr ""
+
+msgid "Font size in percent; resize slides using the dividers"
 msgstr ""
 
 msgid "Fullscreen Presentation running"
@@ -184,16 +341,31 @@ msgstr ""
 msgid "Highlighting"
 msgstr ""
 
-msgid "If using a virtualenv or anaconda, you can also try allowing system site packages."
+msgid "Highlighting with notes"
 msgstr ""
 
+msgid "Image"
+msgstr ""
+
+msgid "Images can only be exported to a new PDF file."
+msgstr ""
+
+#, python-brace-format
+msgid "Invalid display time: {}"
+msgstr ""
+
+#, python-brace-format
 msgid "Invalid log level \"{}\", try one of {}"
 msgstr ""
 
+#, python-brace-format
 msgid "Invalid time (mm or mm:ss expected), got \"{}\""
 msgstr ""
 
 msgid "Jump to page label"
+msgstr ""
+
+msgid "Laser"
 msgstr ""
 
 msgid "Last slide"
@@ -208,25 +380,49 @@ msgstr ""
 msgid "Layout to draw on the current slide"
 msgstr ""
 
+msgid "Layout to draw on the current slide with notes displayed"
+msgstr ""
+
+msgid "Load file list"
+msgstr ""
+
+msgid "Load list…"
+msgstr ""
+
 msgid "Loop"
 msgstr ""
 
 msgid "Manage files"
 msgstr ""
 
+#, python-brace-format
 msgid "Media support uses {}."
 msgstr ""
 
+#, python-brace-format
 msgid "Media support using {} is disabled."
 msgstr ""
 
 msgid "Media support: "
 msgstr ""
 
+msgid "Missing"
+msgstr ""
+
+#, python-brace-format
 msgid "Missing dependency: python \"{}\" package"
 msgstr ""
 
+msgid "Missing file"
+msgstr ""
+
 msgid "Monitoring of changes to reload files automatically is not available"
+msgstr ""
+
+msgid "Move the selection down in the list (Alt+↓)"
+msgstr ""
+
+msgid "Move the selection up in the list (Alt+↑)"
 msgstr ""
 
 msgid "Navigating"
@@ -235,10 +431,33 @@ msgstr ""
 msgid "Never clear (manually only)"
 msgstr ""
 
+msgid "Next file"
+msgstr ""
+
+msgid "Next file →"
+msgstr ""
+
 msgid "Next slide"
 msgstr ""
 
 msgid "Next slide with different label"
+msgstr ""
+
+msgid "Next slides"
+msgstr ""
+
+msgid "No file from the list is active"
+msgstr ""
+
+msgid "No file is selected."
+msgstr ""
+
+msgid ""
+"No files yet.\n"
+"Add PDFs or images, or drop them here."
+msgstr ""
+
+msgid "Non-finite numbers are not permitted in a file list."
 msgstr ""
 
 msgid "Not starting content or presenter window full screen because there is only one monitor"
@@ -253,7 +472,31 @@ msgstr ""
 msgid "Notes position"
 msgstr ""
 
+msgid "Notes slide"
+msgstr ""
+
+msgid "Now showing"
+msgstr ""
+
+msgid "Only absolute HTTP and HTTPS links are allowed in this local build."
+msgstr ""
+
+msgid "Only local file URIs can be dropped here."
+msgstr ""
+
+msgid "Only local files can be added to a presentation."
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
 msgid "Open _Recent"
+msgstr ""
+
+msgid "Open a PDF from the file list to set timings for individual slides."
+msgstr ""
+
+msgid "Open a saved file list"
 msgstr ""
 
 msgid "Open file"
@@ -271,10 +514,32 @@ msgstr ""
 msgid "Overwrite changes instead of reloading?"
 msgstr ""
 
+msgid "PDF"
+msgstr ""
+
+msgid "PDF application launch actions are disabled in this local build."
+msgstr ""
+
 msgid "PDF files"
 msgstr ""
 
+msgid "PDFs and images"
+msgstr ""
+
+msgid "PRESENTER FIELDS"
+msgstr ""
+
+msgid "Page timing indices must be non-negative whole numbers."
+msgstr ""
+
+msgid "Paste"
+msgstr ""
+
 msgid "Pause"
+msgstr ""
+
+#, python-brace-format
+msgid "Paused · {:.1f} s remaining"
 msgstr ""
 
 msgid "Plain"
@@ -289,6 +554,25 @@ msgstr ""
 msgid "Play/pause timer"
 msgstr ""
 
+msgid "Play:"
+msgstr ""
+
+msgid "Playback"
+msgstr ""
+
+msgid "Playback and transitions…"
+msgstr ""
+
+msgid "Playback · Pympress"
+msgstr ""
+
+#, python-brace-format
+msgid "Playing · next slide in {:.1f} s"
+msgstr ""
+
+msgid "Please choose a filename ending in .json."
+msgstr ""
+
 msgid "Pointer"
 msgstr ""
 
@@ -301,7 +585,16 @@ msgstr ""
 msgid "Presentation timing breakdown"
 msgstr ""
 
+msgid "Presentation.pympress-list.json"
+msgstr ""
+
+msgid "Presenter"
+msgstr ""
+
 msgid "Presenter fullscreen"
+msgstr ""
+
+msgid "Previous file"
 msgstr ""
 
 msgid "Previous slide"
@@ -319,10 +612,8 @@ msgstr ""
 msgid "Pympress Presenter"
 msgstr ""
 
-msgid "Pympress can not extract attached file"
-msgstr ""
-
-msgid "Pympress can not extract embedded media"
+#, python-brace-format
+msgid "Pympress can not edit PDF annotation {}"
 msgstr ""
 
 msgid "Pympress can not find file "
@@ -331,18 +622,40 @@ msgstr ""
 msgid "Pympress can not interpret annotation of type:"
 msgstr ""
 
+#, python-brace-format
 msgid "Pympress does not recognize link type \"{}\""
 msgstr ""
 
+#, python-brace-format
 msgid "Pympress does not recognize link type \"{}\" to \"{}\""
 msgstr ""
 
+#, python-brace-format
 msgid "Pympress does not yet support link type \"{}\""
 msgstr ""
 
+#, python-brace-format
 msgid "Pympress does not yet support link type \"{}\" to \"{}\""
 msgstr ""
 
+msgid "Pympress file list (*.json)"
+msgstr ""
+
+msgid "Pympress – Content"
+msgstr ""
+
+#, python-brace-format
+msgid "Pympress – Content · {name}"
+msgstr ""
+
+msgid "Pympress – Presenter"
+msgstr ""
+
+#, python-brace-format
+msgid "Pympress – Presenter · {name}"
+msgstr ""
+
+#, python-brace-format
 msgid "Python version {}"
 msgstr ""
 
@@ -355,13 +668,25 @@ msgstr ""
 msgid "Reload"
 msgstr ""
 
+msgid "Remove"
+msgstr ""
+
+msgid "Remove from the list; the files remain unchanged"
+msgstr ""
+
+msgid "Reset selected slide to file default"
+msgstr ""
+
 msgid "Reset talk timer"
 msgstr ""
 
 msgid "Reset timer"
 msgstr ""
 
-msgid "Resources are loaded from "
+msgid "Resume"
+msgstr ""
+
+msgid "Save"
 msgstr ""
 
 msgid "Save as..."
@@ -374,6 +699,15 @@ msgid "Save file"
 msgstr ""
 
 msgid "Save file as"
+msgstr ""
+
+msgid "Save file list"
+msgstr ""
+
+msgid "Save list…"
+msgstr ""
+
+msgid "Save the file order as a file list"
 msgstr ""
 
 msgid "Saving changes will overwrite the changed file!"
@@ -394,25 +728,167 @@ msgstr ""
 msgid "Should not require hard enable/disable screensaver on Linux"
 msgstr ""
 
+msgid "Show all fields"
+msgstr ""
+
+msgid "Show deck overview"
+msgstr ""
+
+msgid "Show or hide the file list (Shift+L)"
+msgstr ""
+
+msgid "Show the selected file (Enter)"
+msgstr ""
+
+msgid ""
+"Size: drag the dividers.\n"
+"Position: enable Edit layout, then drag field titles.\n"
+"Notes slides appear for PDFs with notes."
+msgstr ""
+
+msgid "Slide"
+msgstr ""
+
 msgid "Slide number"
+msgstr ""
+
+msgid "Slide timing starts after the crossfade. At file boundaries, the next file determines whether a transition is used."
 msgstr ""
 
 msgid "Some preferences are saved in "
 msgstr ""
 
+msgid "Source"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
 msgid "Stop"
+msgstr ""
+
+msgid "Stopped"
 msgstr ""
 
 msgid "Swap windows"
 msgstr ""
 
+msgid "Target duration"
+msgstr ""
+
+msgid "The GIF does not contain a readable first frame."
+msgstr ""
+
+msgid "The GIF header is invalid."
+msgstr ""
+
+msgid "The GIF is incomplete."
+msgstr ""
+
+msgid "The clipboard contains no file paths."
+msgstr ""
+
+#, python-brace-format
+msgid "The current file changed · draft still applies to “{}”"
+msgstr ""
+
+msgid "The current file changed · global changes are not yet applied"
+msgstr ""
+
+msgid "The dropped data is not a list of filenames."
+msgstr ""
+
+msgid "The dropped file list is too large."
+msgstr ""
+
+msgid "The dropped filenames contain control characters."
+msgstr ""
+
+msgid "The dropped filenames contain invalid text."
+msgstr ""
+
+msgid "The edited file was removed from the list. Your draft has been kept. Choose “Discard” to reload the current file."
+msgstr ""
+
 msgid "The estimated (intended) talk time in minutes"
+msgstr ""
+
+msgid "The file entry contains an unknown setting."
+msgstr ""
+
+msgid "The file list contains a duplicate JSON field."
+msgstr ""
+
+msgid "The file list contains an invalid entry."
+msgstr ""
+
+msgid "The file list contains an invalid page timing index."
+msgstr ""
+
+msgid "The file list contains an invalid selection."
+msgstr ""
+
+msgid "The file list is too large to save."
+msgstr ""
+
+msgid "The file list is too large."
+msgstr ""
+
+msgid "The file list must not overwrite a presentation file. Choose a JSON filename."
+msgstr ""
+
+msgid "The file list was not found or is not a regular file."
+msgstr ""
+
+msgid "The file path contains control characters."
+msgstr ""
+
+msgid "The file path is empty or contains control characters."
+msgstr ""
+
+msgid "The image file is too large (maximum 128 MiB)."
+msgstr ""
+
+msgid "The image format is not supported by this build."
+msgstr ""
+
+msgid "The image is too large (maximum 40 megapixels and 20,000 pixels per edge)."
 msgstr ""
 
 msgid "The log is written to "
 msgstr ""
 
 msgid "The open file was modified outside of pympress but you have made unsaved changes."
+msgstr ""
+
+msgid "The page number is invalid."
+msgstr ""
+
+msgid "The per-page timing settings are invalid or too large."
+msgstr ""
+
+msgid "The slide duration must be between 0.1 and 86,400 seconds."
+msgstr ""
+
+msgid "The slideshow mode or loop setting is invalid."
+msgstr ""
+
+msgid "The transition duration must be between 0 and 5 seconds."
+msgstr ""
+
+msgid "The transition must be cut or fade."
+msgstr ""
+
+msgid "The transition setting must be enabled or disabled."
+msgstr ""
+
+msgid "This file is not a supported raster image."
+msgstr ""
+
+msgid "This is not a supported Pympress file list."
 msgstr ""
 
 msgid "Time elapsed"
@@ -422,6 +898,12 @@ msgid "Time estimation"
 msgstr ""
 
 msgid "Time per slide (s):"
+msgstr ""
+
+msgid "Time per slide:"
+msgstr ""
+
+msgid "Timer"
 msgstr ""
 
 msgid "Timers"
@@ -448,21 +930,34 @@ msgstr ""
 msgid "Toggle pause of talk timer"
 msgstr ""
 
-msgid "Try your operating system’s package manager, or try running: pip install pygobject pycairo"
+msgid "Toggle the laser pointer (L)"
+msgstr ""
+
+msgid "Transition"
+msgstr ""
+
+msgid "Type"
 msgstr ""
 
 msgid "Undo highlight stroke"
 msgstr ""
 
+#, python-brace-format
 msgid "Unexpected action in index \"{}\""
 msgstr ""
 
+#, python-brace-format
 msgid "Unexpected missing page to draw for widget \"{}\""
 msgstr ""
 
+#, python-brace-format
 msgid "Unknow widget {} to be fullscreened, aborting."
 msgstr ""
 
+msgid "Unknown presenter field"
+msgstr ""
+
+#, python-brace-format
 msgid "Unknown widget \"{}\" to draw"
 msgstr ""
 
@@ -481,10 +976,17 @@ msgstr ""
 msgid "Unsupported OS: can't enable/disable screensaver"
 msgstr ""
 
+#, python-brace-format
+msgid "Unsupported file type: {}"
+msgstr ""
+
 msgid "Unsupported link clicked. "
 msgstr ""
 
 msgid "Unzoom"
+msgstr ""
+
+msgid "Use transitions for this file"
 msgstr ""
 
 msgid "Validate goto/jump destination"
@@ -505,9 +1007,6 @@ msgstr ""
 msgid "_Annotations"
 msgstr ""
 
-msgid "_Automatic navigation"
-msgstr ""
-
 msgid "_Blank screen"
 msgstr ""
 
@@ -520,6 +1019,9 @@ msgstr ""
 msgid "_Close"
 msgstr ""
 
+msgid "_Deck overview"
+msgstr ""
+
 msgid "_Disabled"
 msgstr ""
 
@@ -530,6 +1032,9 @@ msgid "_Every second page"
 msgstr ""
 
 msgid "_File"
+msgstr ""
+
+msgid "_File list…"
 msgstr ""
 
 msgid "_First"
@@ -673,13 +1178,13 @@ msgstr ""
 msgid "page label"
 msgstr ""
 
-msgid "pip will then download and compile pygobject and pycairo, for which you need the Gtk and cairo headers (or development packages)."
-msgstr ""
-
 msgid "pympress is a little PDF reader written in Python using Poppler for PDF rendering and GTK for the GUI.\n"
 msgstr ""
 
 msgid "resizeable"
+msgstr ""
+
+msgid "s"
 msgstr ""
 
 msgid "slide"
@@ -697,6 +1202,28 @@ msgstr ""
 msgid "widget"
 msgstr ""
 
+#, python-brace-format
+msgid "{count} file · Active: {position}/{total} – {name}"
+msgid_plural "{count} files · Active: {position}/{total} – {name}"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-brace-format
+msgid "{count} file · No file from the list is active"
+msgid_plural "{count} files · No file from the list is active"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-brace-format
 msgid "{}, {}, {}, {}, or {}"
+msgstr ""
+
+msgid "← Previous file"
+msgstr ""
+
+msgid "↑ Move up"
+msgstr ""
+
+msgid "↓ Move down"
 msgstr ""
 

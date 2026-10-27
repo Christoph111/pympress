@@ -1104,3 +1104,506 @@ msgstr "\n"
 "有关详细说明，请参阅 https://github.com/Cimbali/pympress/blob/master/README.md#dependencies\n"
 ""
 
+msgid "A file URI must contain an absolute path."
+msgstr ""
+
+msgid "A file path must be text."
+msgstr ""
+
+#, python-brace-format
+msgid "A presentation can contain at most {} files."
+msgstr ""
+
+msgid "Add PDFs and images"
+msgstr ""
+
+msgid "Add files or file paths from the clipboard (⌘V / Ctrl+V)"
+msgstr ""
+
+msgid "Add files…"
+msgstr ""
+
+msgid "Add multiple PDFs and images to the file list"
+msgstr ""
+
+msgid "Advanced layout…"
+msgstr ""
+
+msgid "An image is one slide and uses the file’s display time."
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Both fields must be part of the current layout."
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+#, python-brace-format
+msgid "Cannot use this file path: {}"
+msgstr ""
+
+msgid "Changes not yet applied"
+msgstr ""
+
+msgid "Clear"
+msgstr ""
+
+msgid "Clear the file list without deleting any files"
+msgstr ""
+
+msgid "Configure playback and transitions"
+msgstr ""
+
+msgid "Could not open file"
+msgstr ""
+
+#, python-brace-format
+msgid "Could not open the image: {}"
+msgstr ""
+
+#, python-brace-format
+msgid "Could not read the file list: {}"
+msgstr ""
+
+msgid "Could not save the PDF. Your changes remain unsaved."
+msgstr ""
+
+#, python-brace-format
+msgid "Could not save the file list: {}"
+msgstr ""
+
+msgid "Crossfade"
+msgstr ""
+
+msgid "Current file"
+msgstr ""
+
+msgid "Custom"
+msgstr ""
+
+msgid "Cut"
+msgstr ""
+
+msgid "Discard"
+msgstr ""
+
+msgid "Discard unapplied changes and reload settings for the current file"
+msgstr ""
+
+msgid "Display time (s)"
+msgstr ""
+
+msgid "Double-click a time to edit it. Clear the field to use the file default."
+msgstr ""
+
+msgid "Double-click a time to edit it. Clear the field to use the file default. Only the first 10,000 slides can be edited individually here."
+msgstr ""
+
+msgid "Drop PDFs and images here. Double-click to open the selected file."
+msgstr ""
+
+msgid "Edit groups, orientation, and size distribution"
+msgstr ""
+
+msgid "Enable “Edit layout” to move fields"
+msgstr ""
+
+msgid "Entire file list"
+msgstr ""
+
+msgid "Fields"
+msgstr ""
+
+msgid "File"
+msgstr ""
+
+msgid "File default"
+msgstr ""
+
+msgid "File list"
+msgstr ""
+
+msgid "File list · Pympress"
+msgstr ""
+
+msgid "File list…"
+msgstr ""
+
+#, python-brace-format
+msgid "File not found or not a regular file: {}"
+msgstr ""
+
+#, python-brace-format
+msgid "File not found: {}"
+msgstr ""
+
+msgid "File settings"
+msgstr ""
+
+msgid "Folder"
+msgstr ""
+
+msgid "Font size in percent; resize slides using the dividers"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Images can only be exported to a new PDF file."
+msgstr ""
+
+#, python-brace-format
+msgid "Invalid display time: {}"
+msgstr ""
+
+msgid "Laser"
+msgstr ""
+
+msgid "Load file list"
+msgstr ""
+
+msgid "Load list…"
+msgstr ""
+
+msgid "Missing"
+msgstr ""
+
+msgid "Missing file"
+msgstr ""
+
+msgid "Move the selection down in the list (Alt+↓)"
+msgstr ""
+
+msgid "Move the selection up in the list (Alt+↑)"
+msgstr ""
+
+msgid "Next file"
+msgstr ""
+
+msgid "Next file →"
+msgstr ""
+
+msgid "Next slides"
+msgstr ""
+
+msgid "No file from the list is active"
+msgstr ""
+
+msgid "No file is selected."
+msgstr ""
+
+msgid ""
+"No files yet.\n"
+"Add PDFs or images, or drop them here."
+msgstr ""
+
+msgid "Non-finite numbers are not permitted in a file list."
+msgstr ""
+
+msgid "Notes slide"
+msgstr ""
+
+msgid "Now showing"
+msgstr ""
+
+msgid "Only absolute HTTP and HTTPS links are allowed in this local build."
+msgstr ""
+
+msgid "Only local file URIs can be dropped here."
+msgstr ""
+
+msgid "Only local files can be added to a presentation."
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
+msgid "Open a PDF from the file list to set timings for individual slides."
+msgstr ""
+
+msgid "Open a saved file list"
+msgstr ""
+
+msgid "PDF"
+msgstr ""
+
+msgid "PDF application launch actions are disabled in this local build."
+msgstr ""
+
+msgid "PDFs and images"
+msgstr ""
+
+msgid "PRESENTER FIELDS"
+msgstr ""
+
+msgid "Page timing indices must be non-negative whole numbers."
+msgstr ""
+
+msgid "Paste"
+msgstr ""
+
+#, python-brace-format
+msgid "Paused · {:.1f} s remaining"
+msgstr ""
+
+msgid "Play:"
+msgstr ""
+
+msgid "Playback"
+msgstr ""
+
+msgid "Playback and transitions…"
+msgstr ""
+
+msgid "Playback · Pympress"
+msgstr ""
+
+#, python-brace-format
+msgid "Playing · next slide in {:.1f} s"
+msgstr ""
+
+msgid "Please choose a filename ending in .json."
+msgstr ""
+
+msgid "Presentation.pympress-list.json"
+msgstr ""
+
+msgid "Presenter"
+msgstr ""
+
+msgid "Previous file"
+msgstr ""
+
+msgid "Pympress file list (*.json)"
+msgstr ""
+
+msgid "Pympress – Content"
+msgstr ""
+
+#, python-brace-format
+msgid "Pympress – Content · {name}"
+msgstr ""
+
+msgid "Pympress – Presenter"
+msgstr ""
+
+#, python-brace-format
+msgid "Pympress – Presenter · {name}"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Remove from the list; the files remain unchanged"
+msgstr ""
+
+msgid "Reset selected slide to file default"
+msgstr ""
+
+msgid "Resume"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Save file list"
+msgstr ""
+
+msgid "Save list…"
+msgstr ""
+
+msgid "Save the file order as a file list"
+msgstr ""
+
+msgid "Show all fields"
+msgstr ""
+
+msgid "Show or hide the file list (Shift+L)"
+msgstr ""
+
+msgid "Show the selected file (Enter)"
+msgstr ""
+
+msgid ""
+"Size: drag the dividers.\n"
+"Position: enable Edit layout, then drag field titles.\n"
+"Notes slides appear for PDFs with notes."
+msgstr ""
+
+msgid "Slide"
+msgstr ""
+
+msgid "Slide timing starts after the crossfade. At file boundaries, the next file determines whether a transition is used."
+msgstr ""
+
+msgid "Source"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Stopped"
+msgstr ""
+
+msgid "Target duration"
+msgstr ""
+
+msgid "The GIF does not contain a readable first frame."
+msgstr ""
+
+msgid "The GIF header is invalid."
+msgstr ""
+
+msgid "The GIF is incomplete."
+msgstr ""
+
+msgid "The clipboard contains no file paths."
+msgstr ""
+
+#, python-brace-format
+msgid "The current file changed · draft still applies to “{}”"
+msgstr ""
+
+msgid "The current file changed · global changes are not yet applied"
+msgstr ""
+
+msgid "The dropped data is not a list of filenames."
+msgstr ""
+
+msgid "The dropped file list is too large."
+msgstr ""
+
+msgid "The dropped filenames contain control characters."
+msgstr ""
+
+msgid "The dropped filenames contain invalid text."
+msgstr ""
+
+msgid "The edited file was removed from the list. Your draft has been kept. Choose “Discard” to reload the current file."
+msgstr ""
+
+msgid "The file entry contains an unknown setting."
+msgstr ""
+
+msgid "The file list contains a duplicate JSON field."
+msgstr ""
+
+msgid "The file list contains an invalid entry."
+msgstr ""
+
+msgid "The file list contains an invalid page timing index."
+msgstr ""
+
+msgid "The file list contains an invalid selection."
+msgstr ""
+
+msgid "The file list is too large to save."
+msgstr ""
+
+msgid "The file list is too large."
+msgstr ""
+
+msgid "The file list must not overwrite a presentation file. Choose a JSON filename."
+msgstr ""
+
+msgid "The file list was not found or is not a regular file."
+msgstr ""
+
+msgid "The file path contains control characters."
+msgstr ""
+
+msgid "The file path is empty or contains control characters."
+msgstr ""
+
+msgid "The image file is too large (maximum 128 MiB)."
+msgstr ""
+
+msgid "The image format is not supported by this build."
+msgstr ""
+
+msgid "The image is too large (maximum 40 megapixels and 20,000 pixels per edge)."
+msgstr ""
+
+msgid "The page number is invalid."
+msgstr ""
+
+msgid "The per-page timing settings are invalid or too large."
+msgstr ""
+
+msgid "The slide duration must be between 0.1 and 86,400 seconds."
+msgstr ""
+
+msgid "The slideshow mode or loop setting is invalid."
+msgstr ""
+
+msgid "The transition duration must be between 0 and 5 seconds."
+msgstr ""
+
+msgid "The transition must be cut or fade."
+msgstr ""
+
+msgid "The transition setting must be enabled or disabled."
+msgstr ""
+
+msgid "This file is not a supported raster image."
+msgstr ""
+
+msgid "This is not a supported Pympress file list."
+msgstr ""
+
+msgid "Time per slide:"
+msgstr ""
+
+msgid "Timer"
+msgstr ""
+
+msgid "Toggle the laser pointer (L)"
+msgstr ""
+
+msgid "Transition"
+msgstr ""
+
+msgid "Type"
+msgstr ""
+
+msgid "Unknown presenter field"
+msgstr ""
+
+#, python-brace-format
+msgid "Unsupported file type: {}"
+msgstr ""
+
+msgid "Use transitions for this file"
+msgstr ""
+
+msgid "_File list…"
+msgstr ""
+
+msgid "s"
+msgstr ""
+
+#, python-brace-format
+msgid "{count} file · Active: {position}/{total} – {name}"
+msgid_plural "{count} files · Active: {position}/{total} – {name}"
+msgstr[0] ""
+
+#, python-brace-format
+msgid "{count} file · No file from the list is active"
+msgid_plural "{count} files · No file from the list is active"
+msgstr[0] ""
+
+msgid "← Previous file"
+msgstr ""
+
+msgid "↑ Move up"
+msgstr ""
+
+msgid "↓ Move down"
+msgstr ""
+

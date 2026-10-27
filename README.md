@@ -430,3 +430,7 @@ This means `removed` strings are unused and do not need translating.
 
 Official releases are made to [PyPI](https://pypi.org/) and with [github releases](https://github.com/Cimbali/pympress/releases).
 The community maintains a number of other packages or recipes to install pympress (see [Install section](#installing-)). Any additions welcome.
+
+## Presentation workflows
+
+See [file lists, playback, laser pointing, and presenter controls](docs/presentation_workflow.md) for the extended presentation workflow.
