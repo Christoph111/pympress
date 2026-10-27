@@ -49,7 +49,7 @@ from gi.repository import GObject, Gtk, Gdk, GLib, GdkPixbuf, Gio
 
 from pympress import (
     document, surfacecache, util, pointer, scribble, deck, builder, talk_time, dialog, extras, editable_label,
-    filelist, image_document
+    filelist, image_document, playback, transitions
 )
 
 
@@ -190,6 +190,13 @@ class UI(builder.Builder):
         self.file_list_window = None
         self.source_uri = None
         self.image_document = None
+        self.presenter_tools = None
+        self.playback_window = None
+        self.transition = None
+        self._opening_entry = None
+        self._playback_advancing = False
+        self.playback = playback.PlaybackController(self._schedule_playback, GLib.source_remove,
+                                                    self._advance_playback, on_change=self._playback_state_changed)
 
         self.blanked = self.config.getboolean('content', 'start_blanked')
 
@@ -255,6 +262,9 @@ class UI(builder.Builder):
             'show-file-list': dict(activate=self.show_file_list),
             'next-file': dict(activate=self.file_list_next),
             'previous-file': dict(activate=self.file_list_previous),
+            'show-playback': dict(activate=self.show_playback),
+            'playback-toggle': dict(activate=self.playback_toggle),
+            'playback-stop': dict(activate=self.playback_stop),
             'list-recent-files': dict(change_state=self.populate_recent_menu, state=False),
             'page':              dict(activate=lambda gaction, param: self.goto_page(param.get_int64()),
                                       parameter_type=int, state=self.current_page),
@@ -279,6 +289,10 @@ class UI(builder.Builder):
         self.timing = dialog.TimingReport(self)
         self.autoplay = dialog.AutoPlay(self)
         self.talk_time = talk_time.TimeCounter(self, self.est_time, self.timing, self.autoplay)
+        self.talk_time.pause_action = self.setup_actions({
+            'pause-timer': dict(activate=self._toggle_timer, state=self.talk_time.paused),
+            'autoplay': dict(activate=self.show_playback),
+        }).lookup_action('pause-timer')
         self.layout_editor = dialog.LayoutEditor(self, self.config)
         self.file_watcher = extras.FileWatcher()
         self.config.register_actions(self)
@@ -295,6 +309,7 @@ class UI(builder.Builder):
         self.make_pwin()
 
         self.connect_signals(self)
+        self.transition = transitions.Crossfade(self)
         self.c_win.connect('window-state-event', self.on_window_state_event)
         self.p_win.connect('window-state-event', self.on_window_state_event)
         for window in (self.c_win, self.p_win):
@@ -346,6 +361,8 @@ class UI(builder.Builder):
 
         self.c_win.show_all()
         self.p_win.show_all()
+        if self.presenter_tools is not None:
+            self.presenter_tools.refresh()
 
         # Queue some redraws
         self.c_da.queue_draw()
@@ -750,6 +767,10 @@ class UI(builder.Builder):
         """ Save configuration and exit the main loop.
         """
         self.scribbler.disable_scribbling()
+        self.playback.stop()
+        self.transition.cancel()
+        if self.playback_window is not None:
+            self.playback_window.hide()
         self.medias.hide_all()
 
         self.doc.cleanup_media_files()
@@ -829,6 +850,8 @@ class UI(builder.Builder):
             return False
 
         previous_image = self.image_document
+        if getattr(self, 'transition', None) is not None:
+            self._prepare_transition() if doc_uri else self.transition.cancel()
         if hasattr(getattr(self, 'laser', None), 'cancel_manual_pointer'):
             self.laser.cancel_manual_pointer()
         self.doc = new_doc
@@ -929,6 +952,8 @@ class UI(builder.Builder):
                              else _('Pympress – Content'))
         if self.file_list_window is not None:
             self.file_list_window.refresh()
+        if self.playback_window is not None:
+            self.playback_window.refresh()
 
 
     def show_file_list(self, *args):
@@ -942,8 +967,137 @@ class UI(builder.Builder):
             self.file_list_window.present()
 
 
+    def show_playback(self, *args):
+        """Present the independent playback settings window."""
+        if self.playback_window is None:
+            from pympress.playback_window import PlaybackWindow
+            self.playback_window = PlaybackWindow(self)
+        self.playback_window.present()
+
+
+    @staticmethod
+    def _schedule_playback(seconds, callback):
+        """Schedule one callback using a bounded GLib timeout."""
+        return GLib.timeout_add(max(1, int(math.ceil(seconds * 1000))), callback)
+
+
+    def _playback_entry(self):
+        """Return the incoming entry during a document change, or the current entry."""
+        return self._opening_entry or self.file_list.current
+
+
+    def _current_play_delay(self):
+        """Combine the current slide hold time and unfinished transition duration."""
+        entry = self._playback_entry()
+        hold = entry.duration_for_page(self.current_page) if entry is not None else 5.0
+        fade = self.transition.remaining if self.transition is not None else 0.0
+        return min(86400.0, hold + fade)
+
+
+    def _playback_state_changed(self, controller):
+        """Synchronize timer, transition, and management controls with playback."""
+        if controller.running:
+            self.talk_time.unpause()
+            self.transition.resume()
+        else:
+            self.talk_time.pause()
+            self.transition.pause() if controller.paused else self.transition.cancel()
+        if self.playback_window is not None:
+            self.playback_window.refresh_status()
+        if self.presenter_tools is not None:
+            self.presenter_tools.refresh()
+
+
+    def _toggle_timer(self, *args):
+        """Toggle automatic playback when active, otherwise toggle the talk timer."""
+        if self.playback.is_active:
+            self.playback_toggle()
+        else:
+            self.talk_time.switch_pause(None)
+
+
+    def playback_toggle(self, *args):
+        """Start, pause, or resume the current automatic presentation."""
+        if self.playback.running:
+            self.playback.pause()
+            self.talk_time.pause()
+        elif self.playback.paused:
+            self.playback.resume()
+            self.talk_time.unpause()
+        else:
+            if self.doc.doc is None:
+                if not self.file_list_next():
+                    self.show_file_list()
+                    return False
+            self.autoplay.stop_looping()
+            self.playback.start(self._current_play_delay(), self.file_list.playback_mode,
+                                self.file_list.playback_loop)
+            self.talk_time.unpause()
+        return True
+
+
+    def playback_stop(self, *args):
+        """Stop automatic playback and pause the talk timer."""
+        self.playback.stop()
+        self.talk_time.pause()
+
+
+    def playback_settings_changed(self):
+        """Apply list timing changes to the active playback session."""
+        if self.playback.is_active:
+            self.playback.mode = self.file_list.playback_mode
+            self.playback.loop = self.file_list.playback_loop
+            self.playback.reset(self._current_play_delay())
+        entry = self.file_list.current
+        if (self.file_list.transition_style == 'cut' or not self.file_list.transition_seconds or
+                entry is not None and not entry.transition_enabled):
+            self.transition.cancel()
+        self._refresh_file_list()
+        self._playback_state_changed(self.playback)
+
+
+    def _advance_playback(self, mode, loop):
+        """Advance once without a second timer or prompts for unsaved work."""
+        if self.doc.doc is None:
+            return None
+        self._playback_advancing = True
+        try:
+            if self.current_page + 1 < self.doc.pages_number():
+                self.goto_page(self.current_page + 1, autoplay=True)
+            elif mode == 'current':
+                if not loop:
+                    return None
+                self.goto_page(0, autoplay=True)
+            else:
+                if self.doc.has_changes():
+                    return None
+                candidates = list(range(self.file_list.current_index + 1, len(self.file_list)))
+                if loop:
+                    candidates += list(range(0, self.file_list.current_index + 1))
+                next_index = next((index for index in candidates if self.file_list.entries[index].exists), None)
+                if next_index is None or not self.file_list_activate(next_index):
+                    return None
+                self.talk_time.unpause()
+            return self._current_play_delay()
+        finally:
+            self._playback_advancing = False
+
+
+    def _prepare_transition(self):
+        """Capture the old slide when the incoming entry permits a crossfade."""
+        entry = self._playback_entry()
+        seconds = (self.file_list.transition_seconds if self.file_list.transition_style == 'fade' and
+                   (entry is None or entry.transition_enabled) else 0.0)
+        if self.playback.paused:
+            seconds = 0.0
+        self.transition.prepare(seconds)
+
+
     def file_list_error(self, message):
         """Report a file-list failure without prompting during automatic playback."""
+        if getattr(self, '_playback_advancing', False):
+            logger.warning('Playlist stopped: %s', message)
+            return
         dialog = Gtk.MessageDialog(transient_for=self.p_win, flags=Gtk.DialogFlags.MODAL,
                                    message_type=Gtk.MessageType.ERROR, text=str(message))
         dialog.add_button(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
@@ -975,7 +1129,11 @@ class UI(builder.Builder):
             self.file_list_error(_('File not found: {}').format(entry.path))
             return False
         self._open_cancelled = False
-        opened = self.swap_document(entry.uri)
+        self._opening_entry = entry
+        try:
+            opened = self.swap_document(entry.uri)
+        finally:
+            self._opening_entry = None
         if not opened:
             if not self._open_cancelled:
                 self.file_list_status[entry.id] = _('Could not open file')
@@ -1216,6 +1374,9 @@ class UI(builder.Builder):
         Args:
             uri (`str`): the URI of the document
         """
+        if getattr(self, '_playback_advancing', False):
+            logger.warning('Playlist stopped: could not open %s', uri)
+            return
         # Check if the path is valid
         uri_parts = urlsplit(uri)
         filename = pathlib.Path(url2pathname(uri_parts.path))
@@ -1318,6 +1479,9 @@ class UI(builder.Builder):
             page (`int`): the page to which to go. Will be clipped to document pages.
             autoplay (`bool`): whether this page change was triggered automatically
         """
+        if (not self.page_number.editing and page != self.current_page and
+                getattr(self, 'transition', None) is not None):
+            self._prepare_transition()
         self.preview_page = self.doc.goto(page)
 
         if not self.page_number.editing:
@@ -1347,11 +1511,14 @@ class UI(builder.Builder):
             gaction (:class:`~Gio.Action`): the action triggering the call
             param (:class:`~GLib.Variant`): the parameter as a variant, or None
         """
-        if not self.page_number.editing and self.talk_time.paused:
+        active_playback = getattr(self, 'playback', None)
+        if (not self.page_number.editing and self.talk_time.paused and
+                not (active_playback is not None and active_playback.is_active)):
             self.talk_time.unpause()
         elif not self.page_number.editing and self.preview_page >= self.doc.pages_number() - 1:
             if self.file_list_next():
-                self.talk_time.unpause()
+                if active_playback is None or not active_playback.paused:
+                    self.talk_time.unpause()
         else:
             self.goto_page(self.preview_page + 1)
 
@@ -1494,12 +1661,21 @@ class UI(builder.Builder):
         self.medias.replace_media_overlays(self.doc.page(self.current_page), draw_page)
 
         # Start counter if needed
-        if unpause:
+        if unpause and not (getattr(self, 'playback', None) is not None and self.playback.paused):
             self.talk_time.unpause()
         if not autoplay:
             self.autoplay.stop_looping()
 
         self.timing.transition(self.preview_page, self.talk_time.current_time())
+        if getattr(self, 'transition', None) is not None:
+            self.transition.begin()
+        if getattr(self, 'playback', None) is not None and not self._playback_advancing:
+            if self.doc.doc is None:
+                self.playback.stop()
+            elif self.playback.is_active:
+                self.playback.reset(self._current_play_delay())
+        if getattr(self, 'presenter_tools', None) is not None:
+            self.presenter_tools.refresh()
 
 
     def on_draw(self, widget, cairo_context):
@@ -1675,6 +1851,10 @@ class UI(builder.Builder):
         elif self.annotations.try_cancel():
             return True
         elif self.autoplay.stop_looping():
+            return True
+        elif getattr(self, 'playback', None) is not None and self.playback.is_active:
+            self.playback.stop()
+            self.exit_fullscreen()
             return True
 
         return self.exit_fullscreen()
@@ -1993,6 +2173,8 @@ class UI(builder.Builder):
         Returns:
             `bool`: whether the notes blanking has been toggled.
         """
+        if getattr(self, 'transition', None) is not None:
+            self.transition.cancel()
         self.blanked = not self.blanked
         self.c_da.queue_draw()
         gaction.change_state(GLib.Variant.new_boolean(self.blanked))
@@ -2040,6 +2222,8 @@ class UI(builder.Builder):
         # queue visibility of all newly added widgets, make sure visibility is right
         self.p_central.show_all()
         self.p_frame_annot.set_visible(self.show_annotations)
+        if getattr(self, 'presenter_tools', None) is not None:
+            self.presenter_tools.refresh()
 
 
     def change_notes_pos(self, gaction, target, force=False):

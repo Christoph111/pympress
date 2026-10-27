@@ -244,8 +244,8 @@
 			<attribute name="action">app.jumpto-label</attribute>
 		</item>
 		<item>
-			<attribute name="label" translatable="yes">_Automatic navigation</attribute>
-			<attribute name="action">app.autoplay</attribute>
+			<attribute name="label" translatable="yes">Playback and transitions…</attribute>
+			<attribute name="action">app.show-playback</attribute>
 		</item>
 	</submenu>
 
