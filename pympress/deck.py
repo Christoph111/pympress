@@ -141,17 +141,21 @@ class Overview(builder.Builder):
         """ Build DrawingArea and AspectFrame elements to display later on
         """
         pages = self.get_last_label_pages() if not self.all_pages and self.has_labels() else range(self.pages_number())
+        # Own the frames while detaching them: a drawing area reference does
+        # not keep its GTK parent alive after the grid releases that parent.
+        frames = [da.get_parent() for da in self.deck_da_list]
+        for frame in frames[1:]:
+            self.deck_grid.remove(frame)
+
+        # The first drawing area remains the cache's provider, even with no
+        # document. Drop stale thumbnails when changing to a shorter document.
+        keep = max(1, len(pages))
+        self.deck_da_list = self.deck_da_list[:keep]
+        frames = frames[:keep]
         self.grid_size = (len(pages), 1)
 
-        # Always keep the first drawing area as it is used to provide surfaces in the cache
-        for row in range(1, self.grid_size[0]):
-            self.deck_grid.remove_row(row)
-        for col in range(1, self.grid_size[1]):
-            self.deck_grid.remove_row(col)
-
-        # Set drawing areas
-        for num, da in enumerate(self.deck_da_list[1:], 1):
-            self.deck_grid.attach(da.get_parent(), 1, num, 1, 1)
+        for num, frame in enumerate(frames[1:], 1):
+            self.deck_grid.attach(frame, 0, num, 1, 1)
 
         for num in range(len(self.deck_da_list), len(pages)):
             da = Gtk.DrawingArea()
@@ -169,7 +173,7 @@ class Overview(builder.Builder):
             frame.set_shadow_type(Gtk.ShadowType.NONE)
             frame.add(da)
 
-            self.deck_grid.attach(frame, 1, num, 1, 1)
+            self.deck_grid.attach(frame, 0, num, 1, 1)
 
         ratio = self.c_da.get_allocated_width() / self.c_da.get_allocated_height()
         for page, da in zip(pages, self.deck_da_list):
