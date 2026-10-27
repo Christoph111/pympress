@@ -51,9 +51,6 @@ import gi
 gi.require_version('Poppler', '0.18')
 from gi.repository import Poppler
 
-from pympress.util import fileopen
-
-
 def get_extension(mime_type):
     """ Returns a valid filename extension (recognized by python) for a given mime type.
 
@@ -344,16 +341,9 @@ class Page(object):
                 if not action:
                     continue
             elif annot_type == Poppler.AnnotType.FILE_ATTACHMENT:
-                attachment = annotation.annot.get_attachment()
-                filename = pathlib.Path(attachment.name)
-                with tempfile.NamedTemporaryFile('wb', suffix=filename.suffix, prefix=filename.stem, delete=False) as f:
-                    # now the file name is shotgunned
-                    filename = pathlib.Path(f.name)
-                    self.parent.remove_on_exit(filename)
-                if not attachment.save(str(filename)):
-                    logger.error(_("Pympress can not extract attached file"))
-                    continue
-                action = Link.build_closure(fileopen, filename)
+                # PDF content must neither write arbitrary attachments nor invoke their OS handlers.
+                logger.info('PDF file attachments are disabled in this local build')
+                continue
             elif annot_type in {Poppler.AnnotType.TEXT, Poppler.AnnotType.POPUP,
                                 Poppler.AnnotType.FREE_TEXT}:
                 # text-only annotations, hide them from screen and show them in annotations popup
@@ -437,20 +427,22 @@ class Page(object):
                 warning = _("Pympress does not recognize link type \"{}\" to \"{}\"").format(link_type, dest_name)
 
         elif link_type == Poppler.ActionType.LAUNCH:
-            launch = action.launch
-            if launch.params:
-                logger.warning("ignoring params: " + str(launch.params))
-
-            filepath = self.parent.get_full_path(launch.file_name)
-            if not filepath:
-                logger.error("can not find file " + launch.file_name)
-                return lambda: None
-
-            else:
-                return Link.build_closure(fileopen, filepath)
+            warning = _('PDF application launch actions are disabled in this local build.')
 
         elif link_type == Poppler.ActionType.URI:
-            return Link.build_closure(webbrowser.open_new_tab, action.uri.uri)
+            uri = action.uri.uri
+            try:
+                # urlsplit strips some leading controls; reject them before parsing.
+                valid_text = isinstance(uri, str) and uri == uri.strip() and not any(
+                    ord(char) < 32 or ord(char) == 127 for char in uri)
+                parsed = urlsplit(uri) if valid_text else None
+                if parsed is not None and parsed.scheme.lower() in {'http', 'https'} and parsed.hostname:
+                    # Access port too, so malformed authorities fail closed before dispatch.
+                    parsed.port
+                    return Link.build_closure(webbrowser.open_new_tab, uri)
+            except (TypeError, ValueError):
+                pass
+            warning = _('Only absolute HTTP and HTTPS links are allowed in this local build.')
 
         elif link_type == Poppler.ActionType.RENDITION:  # Poppler 0.22
             warning = _("Pympress does not yet support link type \"{}\"").format(link_type)
@@ -485,14 +477,8 @@ class Page(object):
         if link_type == Poppler.ActionType.RENDITION:
             media = action.rendition.media
             if media.is_embedded():
-                ext = get_extension(media.get_mime_type())
-                with tempfile.NamedTemporaryFile('wb', suffix=ext, prefix='pdf_embed_', delete=False) as f:
-                    # now the file name is shotgunned
-                    filename = pathlib.Path(f.name)
-                    self.parent.remove_on_exit(filename)
-                if not media.save(str(filename)):
-                    logger.error(_("Pympress can not extract embedded media"))
-                    return None
+                logger.info('Automatic embedded PDF media extraction is disabled in this local build')
+                return None
             else:
                 filename = self.parent.get_full_path(media.get_filename())
                 if not filename:
@@ -878,6 +864,17 @@ class Document(object):
         return self.changes
 
 
+    @staticmethod
+    def _local_path(uri):
+        """ Decode a local file URI once, retaining its directory and symlink target.
+        """
+        parts = urlsplit(uri, scheme='file')
+        if parts.scheme != 'file' or parts.netloc.lower() not in {'', 'localhost'} or \
+                not parts.path or parts.query or parts.fragment:
+            return None
+        return pathlib.Path(os.path.realpath(url2pathname(parts.path)))
+
+
     def save_changes(self, dest_uri=None):
         """ Save the changes
 
@@ -1248,17 +1245,6 @@ class Document(object):
             if f.exists():
                 f.unlink()
         self.temp_files.clear()
-
-
-    @staticmethod
-    def _local_path(uri):
-        """ Decode a local file URI once, retaining its directory and symlink target.
-        """
-        parts = urlsplit(uri, scheme='file')
-        if parts.scheme != 'file' or parts.netloc.lower() not in {'', 'localhost'} or \
-                not parts.path or parts.query or parts.fragment:
-            return None
-        return pathlib.Path(os.path.realpath(url2pathname(parts.path)))
 
 
 class EmptyPage(Page):

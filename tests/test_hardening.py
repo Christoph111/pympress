@@ -362,8 +362,63 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(native.page.active_annotations, [])
         self.assertFalse(doc.changes)
 
+    def test_launch_callback_cannot_open_external_file(self):
+        page, _ = self.page()
+        action = types.SimpleNamespace(launch=types.SimpleNamespace(params=None, file_name=str(self.input)))
+        self.invoke(page.get_link_action(self.target.Poppler.ActionType.LAUNCH, action))
+        self.assert_no_external_handler()
 
+    def test_screen_annotations_cannot_bypass_handler_policy(self):
+        actions = [
+            types.SimpleNamespace(any=types.SimpleNamespace(type=self.target.Poppler.ActionType.LAUNCH),
+                                  launch=types.SimpleNamespace(params=None, file_name=str(self.input))),
+            types.SimpleNamespace(any=types.SimpleNamespace(type=self.target.Poppler.ActionType.URI),
+                                  uri=types.SimpleNamespace(uri='custom://inert-screen')),
+        ]
+        for action in actions:
+            with self.subTest(action=action.any.type.name):
+                self.target.fileopen.reset_mock()
+                self.target.webbrowser.open_new_tab.reset_mock()
+                annotation = types.SimpleNamespace(get_annot_type=lambda: self.target.Poppler.AnnotType.SCREEN,
+                                                   get_action=lambda: action)
+                mapping = types.SimpleNamespace(annot=annotation,
+                                                area=types.SimpleNamespace(x1=0, x2=50, y1=0, y2=50))
+                _, parent = self.page()
+                page = self.target.Page(NativePage([mapping]), 0, parent)
+                for link in page.links:
+                    self.invoke(link.follow)
+                self.assert_no_external_handler()
 
+    def test_external_movie_and_rendition_keep_in_app_playback(self):
+        for kind in ['movie', 'rendition']:
+            with self.subTest(kind=kind):
+                rectangle = types.SimpleNamespace(x1=0, x2=50, y1=0, y2=50)
+                _, parent = self.page()
+                if kind == 'movie':
+                    movie = types.SimpleNamespace(get_filename=lambda: 'clip.mp4',
+                                                  show_controls=lambda: True, need_poster=lambda: False)
+                    annotation = types.SimpleNamespace(get_annot_type=lambda: self.target.Poppler.AnnotType.MOVIE,
+                                                       get_movie=lambda: movie)
+                else:
+                    media = types.SimpleNamespace(is_embedded=lambda: False, get_filename=lambda: 'clip.mp4',
+                                                  get_mime_type=lambda: 'video/mp4')
+                    action = types.SimpleNamespace(
+                        any=types.SimpleNamespace(
+                            type=self.target.Poppler.ActionType.RENDITION),
+                        rendition=types.SimpleNamespace(
+                            media=media))
+                    annotation = types.SimpleNamespace(get_annot_type=lambda: self.target.Poppler.AnnotType.SCREEN,
+                                                       get_action=lambda: action)
+                page = self.target.Page(NativePage(
+                    [types.SimpleNamespace(annot=annotation, area=rectangle)]), 0, parent)
+                parent.get_full_path.assert_called_once_with('clip.mp4')
+                self.assertEqual(len(page.medias), 1)
+                self.assertEqual(page.medias[0].filename, self.input)
+                self.assertEqual(len(page.links), 1)
+                self.invoke(page.links[0].follow)
+                parent.play_media.assert_called_once_with(hash(page.medias[0]))
+                parent.remove_on_exit.assert_not_called()
+                self.assert_no_external_handler()
 
     def test_text_annotation_edit_is_retained_in_native_save(self):
         class TextAnnotation:
@@ -409,10 +464,76 @@ class HardeningTests(unittest.TestCase):
         self.assertFalse(doc.has_changes())
         self.assert_no_external_handler()
 
+    def test_file_attachment_is_not_extracted_or_registered_for_opening(self):
+        attachment = types.SimpleNamespace(name='inert.txt', save=mock.Mock(
+            side_effect=AssertionError('Extraction forbidden')))
+        annotation = types.SimpleNamespace(get_annot_type=lambda: self.target.Poppler.AnnotType.FILE_ATTACHMENT,
+                                           get_attachment=lambda: attachment)
+        mapping = types.SimpleNamespace(annot=annotation, area=types.SimpleNamespace(x1=0, x2=50, y1=0, y2=50))
+        _, parent = self.page()
+        error = AssertionError('Extraction forbidden')
+        with mock.patch.object(self.target.tempfile, 'NamedTemporaryFile', side_effect=error) as temporary:
+            page = self.target.Page(NativePage([mapping]), 0, parent)
+        for link in page.links:
+            self.invoke(link.follow)
+        temporary.assert_not_called()
+        attachment.save.assert_not_called()
+        parent.remove_on_exit.assert_not_called()
+        self.assert_no_external_handler()
 
+    def test_embedded_rendition_is_not_automatically_extracted(self):
+        page, parent = self.page()
+        media = types.SimpleNamespace(is_embedded=lambda: True, get_mime_type=lambda: 'video/mp4',
+                                      save=mock.Mock(side_effect=AssertionError('Extraction forbidden')))
+        action = types.SimpleNamespace(rendition=types.SimpleNamespace(media=media))
+        rectangle = types.SimpleNamespace(x1=0, x2=50, y1=0, y2=50)
+        error = AssertionError('Extraction forbidden')
+        with mock.patch.object(self.target.tempfile, 'NamedTemporaryFile', side_effect=error) as temporary:
+            self.invoke(page.get_annot_action(self.target.Poppler.ActionType.RENDITION, action, rectangle))
+        temporary.assert_not_called()
+        media.save.assert_not_called()
+        parent.remove_on_exit.assert_not_called()
+        self.assertEqual(page.medias, [])
+        self.assert_no_external_handler()
 
+    def test_only_absolute_http_https_uri_handlers_are_allowed(self):
+        for uri in ['https://example.invalid/a?q=1#slide', 'http://example.invalid/',
+                    'HTTPS://example.invalid/upper']:
+            with self.subTest(uri=uri):
+                self.target.webbrowser.open_new_tab.reset_mock()
+                page, _ = self.page()
+                action = types.SimpleNamespace(uri=types.SimpleNamespace(uri=uri))
+                self.invoke(page.get_link_action(self.target.Poppler.ActionType.URI, action))
+                self.target.webbrowser.open_new_tab.assert_called_once()
+                self.assertEqual(self.target.webbrowser.open_new_tab.call_args.args[0], uri)
+                self.target.fileopen.assert_not_called()
 
+    def test_unsafe_relative_and_obfuscated_uri_handlers_are_blocked(self):
+        unsafe = ['file:///tmp/inert.txt', 'FILE:///tmp/inert.txt', 'custom://inert',
+                  'mailto:presenter@example.invalid', 'javascript:inert', 'data:text/plain,inert',
+                  '../inert.pdf', '//example.invalid/inert', 'http:/missing-host', 'https:///missing-host',
+                  'https://example.invalid:bad-port/', 'https://example.invalid:65536/', 'https://[malformed/',
+                  'www.example.invalid', 'http%3a//example.invalid', 'ht%74ps://example.invalid',
+                  '\thttps://example.invalid', '\nhttps://example.invalid',
+                  'https:\n//example.invalid', 'https://example.invalid/\nfile:///tmp/inert',
+                  'mailto:p@example.invalid\r\nBcc:x@example.invalid']
+        unsafe += ['https://example.invalid/' + chr(control) for control in [0, 1, 9, 10, 13, 31, 127]]
+        for uri in unsafe:
+            with self.subTest(uri=repr(uri)):
+                self.target.fileopen.reset_mock()
+                self.target.webbrowser.open_new_tab.reset_mock()
+                page, _ = self.page()
+                action = types.SimpleNamespace(uri=types.SimpleNamespace(uri=uri))
+                self.invoke(page.get_link_action(self.target.Poppler.ActionType.URI, action))
+                self.assert_no_external_handler()
 
+    def test_internal_goto_navigation_remains_available(self):
+        page, parent = self.page()
+        action = types.SimpleNamespace(goto_dest=types.SimpleNamespace(
+            dest=types.SimpleNamespace(type=self.target.Poppler.DestType.XYZ, page_num=2)))
+        self.invoke(page.get_link_action(self.target.Poppler.ActionType.GOTO_DEST, action))
+        parent.goto_page.assert_called_once_with(1)
+        self.assert_no_external_handler()
 
 
 class UISaveTests(unittest.TestCase):
