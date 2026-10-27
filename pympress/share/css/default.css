@@ -99,3 +99,121 @@
 .grid-frame > *:hover {
   border-color: @theme_selected_bg_color;
 }
+
+/* The presentation surface deliberately has none of these console classes. */
+.pympress-console,
+.pympress-file-list {
+    background-color: #141b24;
+    color: #dce5ed;
+    font-family: "Avenir Next", sans-serif;
+    font-size: 13px;
+}
+.pympress-console label,
+.pympress-file-list label {
+    color: #dce5ed;
+}
+.pympress-console .presenter-controls {
+    background-color: #101720;
+    border-bottom: 1px solid #34414f;
+}
+.pympress-console .console-brand {
+    font-family: "Menlo", monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: #74c6cc;
+}
+.pympress-console button,
+.pympress-file-list button {
+    background-image: none;
+    background-color: #25313f;
+    color: #e0e8ee;
+    border: 1px solid #405062;
+    border-radius: 4px;
+    box-shadow: none;
+    text-shadow: none;
+    padding: 6px 10px;
+}
+.pympress-console button:hover,
+.pympress-file-list button:hover {
+    background-color: #304456;
+    border-color: #74c6cc;
+}
+.pympress-console button:checked,
+.pympress-console button:active,
+.pympress-file-list button:active {
+    background-color: #36545f;
+    border-color: #7bcbd0;
+}
+.pympress-console button:disabled,
+.pympress-file-list button:disabled {
+    background-color: #1c2530;
+    border-color: #303c49;
+    color: #7b8897;
+}
+.pympress-console button:disabled label,
+.pympress-file-list button:disabled label {
+    color: #7b8897;
+}
+.pympress-console entry,
+.pympress-console spinbutton,
+.pympress-console popover,
+.pympress-file-list entry,
+.pympress-file-list popover {
+    color: #e0e8ee;
+    background-color: #1c2835;
+    border-color: #4a5b6d;
+    box-shadow: none;
+    caret-color: #86d0d5;
+}
+.pympress-console frame > border {
+    border: 1px solid #3b4959;
+    border-radius: 3px;
+}
+.pympress-console #p_frame_cur > border {
+    border-color: #639ba5;
+}
+.pympress-console .presenter-field-handle {
+    padding: 3px 7px;
+}
+.pympress-console.layout-editing .presenter-field-handle {
+    background-color: #665133;
+    border-radius: 3px;
+}
+.pympress-console.layout-editing .presenter-field-handle label {
+    color: #ffe0a5;
+}
+.pympress-console paned > separator {
+    background-color: #354556;
+    min-width: 5px;
+    min-height: 5px;
+}
+.pympress-console paned > separator:hover {
+    background-color: #6eb9c1;
+}
+.pympress-console treeview,
+.pympress-file-list treeview {
+    background-color: #1b2633;
+    color: #dce5ed;
+    font-size: 13px;
+    border-color: #344455;
+}
+.pympress-console treeview:selected,
+.pympress-file-list treeview:selected {
+    background-color: #365967;
+    color: #fff;
+}
+.pympress-console treeview header button,
+.pympress-file-list treeview header button {
+    background-color: #263543;
+    border-radius: 0;
+    border-color: #3d4c5b;
+    font-weight: bold;
+}
+.pympress-console #bottom {
+    background-color: #101720;
+    border-top: 1px solid #34414f;
+    padding: 8px;
+}
+.pympress-console .ett-reached { color: #8fd1ae; }
+.pympress-console .ett-info { color: #efca82; }
+.pympress-console .ett-warn { color: #f18c8c; }

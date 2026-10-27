@@ -310,6 +310,11 @@ class UI(builder.Builder):
 
         self.connect_signals(self)
         self.transition = transitions.Crossfade(self)
+        from pympress.presenter_tools import PresenterTools
+        self.presenter_tools = PresenterTools(self)
+        top = self.get_object('bigvbox')
+        top.pack_start(self.presenter_tools.widget, False, False, 0)
+        top.reorder_child(self.presenter_tools.widget, 0)
         self.c_win.connect('window-state-event', self.on_window_state_event)
         self.p_win.connect('window-state-event', self.on_window_state_event)
         for window in (self.c_win, self.p_win):
@@ -361,8 +366,7 @@ class UI(builder.Builder):
 
         self.c_win.show_all()
         self.p_win.show_all()
-        if self.presenter_tools is not None:
-            self.presenter_tools.refresh()
+        self.presenter_tools.refresh()
 
         # Queue some redraws
         self.c_da.queue_draw()
