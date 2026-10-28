@@ -46,8 +46,6 @@ jobs:
   localization:
     name: Localization and format placeholders
     runs-on: ubuntu-latest
-    env:
-      PYMPRESS_TEST_LOCALE_DIR: ${{ runner.temp }}/pympress-locales
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,6 +54,10 @@ jobs:
       - name: Install the existing catalog tooling
         run: python -m pip install --disable-pip-version-check Babel==2.18.0
       - name: Check extracted catalogs and translation placeholders
+        env:
+          PYMPRESS_TEST_LOCALE_DIR: ${{ runner.temp }}/pympress-locales
         run: python scripts/check_i18n.py --compile-dir "$PYMPRESS_TEST_LOCALE_DIR"
       - name: Check translated callback templates and English fallback
+        env:
+          PYMPRESS_TEST_LOCALE_DIR: ${{ runner.temp }}/pympress-locales
         run: python -m unittest discover -s tests -p test_localization.py -v
