@@ -818,6 +818,8 @@ class UI(builder.Builder):
     def cleanup(self, *args):
         """ Save configuration and exit the main loop.
         """
+        if getattr(self, '_cleanup_complete', False):
+            return
         self.scribbler.disable_scribbling()
         self.playback.stop()
         self.transition.cancel()
@@ -829,16 +831,23 @@ class UI(builder.Builder):
             self.playback_window.hide()
         self.medias.hide_all()
 
-        self.doc.cleanup_media_files()
         self.next_file_preview.cleanup()
+        active_doc = self.doc
+        active_doc.cleanup_media_files()
+        # Late draw and prerender callbacks must only see the empty replacement.
+        self.doc = document.EmptyDocument()
+        self.cache.swap_document(self.doc)
+        active_doc.close()
         if self.image_document is not None:
             self.image_document.cleanup()
+            self.image_document = None
         if self.file_list_window is not None:
             self.file_list_window.cleanup()
 
         if self.app.get_action_state('content-fullscreen'):
             # In case we used hard-disabling
             self.set_screensaver(disabled=False)
+        self._cleanup_complete = True
 
 
     def menu_about(self, *args):
@@ -889,7 +898,8 @@ class UI(builder.Builder):
                 self.file_watcher.stop_watching()
             return False
 
-        run_gc = self.doc.doc is not None
+        previous_doc = self.doc
+        run_gc = previous_doc.doc is not None
         prepared = None
         try:
             if doc_uri:
@@ -945,23 +955,26 @@ class UI(builder.Builder):
         self.autoplay.set_doc_pages(self.doc.pages_number())
         self.medias.purge_media_overlays()
         self.timing.set_document_metadata(self.doc.get_structure().copy(), self.doc.page_labels[:])
+        # Reloads must also stop controls retaining callbacks to the old document.
+        self.page_number.setup_doc_callbacks(self.doc)
+        self.deck.setup_doc_callbacks(self.doc)
 
         # A new document, restart at time 0, paused
         if not reloading:
             self.talk_time.pause()
             self.talk_time.reset_timer()
-            self.page_number.setup_doc_callbacks(self.doc)
-            self.deck.setup_doc_callbacks(self.doc)
 
         self.do_page_change(unpause=False)
+        self._refresh_file_list()
 
-        # Now that all references to the old document have been replaced or removed, manually
-        # collect garbage to delete objects and release file handles / close file descriptors
+        # Release native pages before removing their backing image PDF on Windows.
+        # UI callbacks and the render cache now belong to the replacement document.
+        previous_doc.cleanup_media_files()
+        previous_doc.close()
         if run_gc:
             gc.collect(1)
         if previous_image is not None:
             previous_image.cleanup()
-        self._refresh_file_list()
         return True
 
 

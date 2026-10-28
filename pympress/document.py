@@ -35,6 +35,8 @@ elsewhere).
 
 import os
 import logging
+from pympress import pdf_source
+
 logger = logging.getLogger(__name__)
 
 import math
@@ -747,6 +749,7 @@ class Document(object):
         # Setup PDF file
         self.uri = uri
         self.doc = pop_doc
+        self._pdf_source = None
         self.changes = False
 
         self.path = self._local_path(uri) if uri is not None else None
@@ -844,12 +847,45 @@ class Document(object):
             :class:`~pympress.document.Document`: The initialized document
         """
         if uri is None:
-            doc = EmptyDocument()
-        else:
-            poppler_doc = Poppler.Document.new_from_file(uri, None)
-            doc = Document(builder, poppler_doc, uri)
+            return EmptyDocument()
+        owner = pdf_source.prepare(uri)
+        doc = None
+        complete = False
+        try:
+            # Establish an owner before native loading or metadata queries can
+            # fail, so every partial document can release its handles explicitly.
+            doc = Document(builder, None, uri)
+            doc._pdf_source = owner
+            doc.doc = Poppler.Document.new_from_file(owner.uri if owner is not None else uri, None)
+            doc.nb_pages = doc.doc.get_n_pages()
+            doc.doc_page_labels = [doc.doc.get_page(n).get_label() for n in range(doc.nb_pages)]
+            doc.page_labels = doc.doc_page_labels
+            complete = True
+            return doc
+        finally:
+            if not complete:
+                if doc is not None:
+                    doc.close()
+                elif owner is not None:
+                    owner.cleanup()
 
-        return doc
+
+    def close(self):
+        """Release owned native pages and annotations before deleting the PDF copy.
+
+        Cached Python page wrappers may remain referenced by UI callbacks; clear
+        their native objects as well as the document's own cache. Source files
+        and the document's unsaved flag are never changed by this operation.
+        """
+        for page in self.pages_cache.values():
+            page.annotations.clear()
+            page.page = None
+        self.pages_cache.clear()
+        self.doc = None
+        owner = getattr(self, '_pdf_source', None)
+        if owner is not None:
+            owner.cleanup()
+            self._pdf_source = None
 
 
     def made_changes(self):

@@ -11,6 +11,7 @@ import math
 from pympress.filelist import IMAGE_SUFFIXES, local_path
 from pympress.image_document import prepare_image
 from pympress.transitions import fit_page
+from pympress import pdf_source
 
 
 logger = logging.getLogger(__name__)
@@ -44,10 +45,12 @@ class NextFilePreview:
     entry always releases the previous document before creating its replacement.
     """
 
-    def __init__(self, loader=None, image_preparer=None):
+    def __init__(self, loader=None, image_preparer=None, snapshot_preparer=None):
         self._loader = _load_document if loader is None else loader
         self._image_preparer = prepare_image if image_preparer is None else image_preparer
+        self._snapshot_preparer = pdf_source.prepare if snapshot_preparer is None else snapshot_preparer
         self._document = None
+        self._snapshot = None
         self._image = None
         self._key = None
         self.page_count = 0
@@ -57,6 +60,12 @@ class NextFilePreview:
         """Release Poppler before removing a converted image's private PDF."""
         self._document = None
         self.page_count = 0
+        snapshot, self._snapshot = self._snapshot, None
+        if snapshot is not None:
+            try:
+                snapshot.cleanup()
+            except Exception:
+                logger.warning('Could not clean up a next-file PDF snapshot', exc_info=True)
         image, self._image = self._image, None
         if image is not None:
             try:
@@ -104,13 +113,16 @@ class NextFilePreview:
             if path.suffix.lower() in IMAGE_SUFFIXES:
                 self._image = self._image_preparer(path)
             uri = path.as_uri() if self._image is None else self._image.uri
-            self._document = self._loader(uri)
+            self._snapshot = self._snapshot_preparer(uri)
+            self._document = self._loader(uri if self._snapshot is None else self._snapshot.uri)
             self.page_count = self._document.get_n_pages()
             if type(self.page_count) is not int or self.page_count < 1:
                 raise ValueError('The preview document has no pages.')
         except Exception:
             logger.debug('Could not open the next-file preview', exc_info=True)
-            self._failed()
+        else:
+            return self
+        self._failed()
         return self
 
     def _page(self, number, region):

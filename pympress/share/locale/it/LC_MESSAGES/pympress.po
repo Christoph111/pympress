@@ -1789,3 +1789,15 @@ msgid ""
 "Press Enter to quit, or Space or Escape to cancel."
 msgstr ""
 
+msgid "Only local PDF files can be copied for rendering."
+msgstr ""
+
+msgid "The PDF changed while it was being copied."
+msgstr ""
+
+msgid "The PDF snapshot setting is invalid."
+msgstr ""
+
+msgid "The PDF source is not a regular file."
+msgstr ""
+

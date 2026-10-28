@@ -6,6 +6,7 @@ except ImportError:
     import _support
 
 import pathlib
+import os
 import sys
 import tempfile
 import types
@@ -47,6 +48,9 @@ class NativeDocument:
 
 class NextFilePreviewTests(unittest.TestCase):
     def setUp(self):
+        snapshot_policy = mock.patch.object(nextfile_preview.pdf_source, 'prepare', return_value=None)
+        snapshot_policy.start()
+        self.addCleanup(snapshot_policy.stop)
         directory = tempfile.TemporaryDirectory(prefix='pympress-next-preview-test-')
         self.addCleanup(directory.cleanup)
         self.directory = pathlib.Path(directory.name).resolve()
@@ -92,14 +96,74 @@ class NextFilePreviewTests(unittest.TestCase):
         self.preview.get(entry)
         self.assertEqual(self.loader.call_count, 2)
 
-    def test_same_size_modification_reloads_using_nanosecond_stat_identity(self):
+    def test_same_size_modification_reloads_when_mtime_changes(self):
         entry = self.entry()
         self.preview.get(entry)
         original_key = self.preview._key
         entry.path.write_bytes(b'%PDF-edit')
+        stat = entry.path.stat()
+        os.utime(str(entry.path), ns=(stat.st_atime_ns, original_key[-2] + 1000000000))
         self.preview.get(entry)
         self.assertNotEqual(self.preview._key, original_key)
         self.assertEqual(self.loader.call_count, 2)
+
+    def test_snapshot_does_not_change_source_and_releases_after_native_document(self):
+        entry = self.entry()
+        original = entry.path.read_bytes()
+        native_refs = []
+        events = []
+
+        def load(uri):
+            native = NativeDocument()
+            native_refs.append(weakref.ref(native))
+            return native
+
+        def cleanup_snapshot():
+            self.assertTrue(all(reference() is None for reference in native_refs))
+            events.append('snapshot')
+
+        owner = types.SimpleNamespace(uri=(self.directory / 'snapshot.pdf').as_uri(),
+                                      cleanup=mock.Mock(side_effect=cleanup_snapshot))
+        prepare = mock.Mock(return_value=owner)
+        preview = nextfile_preview.NextFilePreview(loader=load, snapshot_preparer=prepare)
+        preview.get(entry)
+        prepare.assert_called_once_with(entry.uri)
+        self.assertEqual(preview.page_count, 2)
+        self.assertEqual(entry.path.read_bytes(), original)
+        preview.cleanup()
+        preview.cleanup()
+        self.assertEqual(events, ['snapshot'])
+        self.assertEqual(entry.path.read_bytes(), original)
+
+    def test_converted_image_snapshot_is_released_before_image_owner(self):
+        entry = self.entry('image.png')
+        events = []
+        image = types.SimpleNamespace(uri=(self.directory / 'converted.pdf').as_uri(),
+                                      cleanup=lambda: events.append('image'))
+        snapshot = types.SimpleNamespace(uri=(self.directory / 'snapshot.pdf').as_uri(),
+                                         cleanup=lambda: events.append('snapshot'))
+        loader = mock.Mock(return_value=NativeDocument())
+        prepare = mock.Mock(return_value=snapshot)
+        preview = nextfile_preview.NextFilePreview(loader, lambda path: image, prepare)
+        preview.get(entry)
+        loader.assert_called_once_with(snapshot.uri)
+        prepare.assert_called_once_with(image.uri)
+        preview.cleanup()
+        self.assertEqual(events, ['snapshot', 'image'])
+
+    def test_failed_snapshot_open_releases_snapshot_and_caches_failure(self):
+        entry = self.entry()
+        snapshot = types.SimpleNamespace(uri=(self.directory / 'snapshot.pdf').as_uri(), cleanup=mock.Mock())
+        prepare = mock.Mock(return_value=snapshot)
+        preview = nextfile_preview.NextFilePreview(
+            mock.Mock(side_effect=ValueError('Invalid PDF')), snapshot_preparer=prepare)
+        preview.get(entry)
+        self.assertIsNotNone(preview.error)
+        self.assertEqual(preview.page_count, 0)
+        snapshot.cleanup.assert_called_once_with()
+        preview.get(entry)
+        prepare.assert_called_once_with(entry.uri)
+        snapshot.cleanup.assert_called_once_with()
 
     def test_different_entry_identity_releases_before_opening_replacement(self):
         documents = []

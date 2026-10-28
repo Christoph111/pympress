@@ -44,8 +44,17 @@ class NativeDocument:
         self.page_labels = [str(index + 1) for index in range(pages)]
         self.guess_notes = mock.Mock(return_value=guessed_mode)
         self.set_notes_pos = mock.Mock()
+        self.closed = False
+        self.close = mock.Mock(side_effect=self._close)
+        self.cleanup_media_files = mock.Mock()
+
+    def _close(self):
+        self.closed = True
+        self.doc = None
 
     def pages_number(self):
+        if self.closed:
+            raise AssertionError('A closed document must not be used by live UI controls.')
         return len(self.page_labels)
 
     def goto(self, page):
@@ -56,6 +65,23 @@ class NativeDocument:
 
     def get_structure(self):
         return {}
+
+    def page(self, number):
+        if self.closed:
+            raise AssertionError('A closed document must not be rendered.')
+        return None if not 0 <= number < self.pages_number() else object()
+
+    def lookup_label(self, label, prefix_unique=False):
+        return self.page_labels.index(label)
+
+    def label_after(self, page):
+        return page + 1
+
+    def label_before(self, page):
+        return page - 1
+
+    def get_last_label_pages(self):
+        return list(range(self.pages_number()))
 
 
 class Clock:
@@ -87,6 +113,7 @@ def load_integration(source):
         'document': types.SimpleNamespace(
             Document=types.SimpleNamespace(
                 create=dependencies.create),
+            EmptyDocument=lambda: NativeDocument(pages=0),
             PdfPage=Mode),
         'GLib': types.SimpleNamespace(
             Error=FakeNativeError,
@@ -105,7 +132,7 @@ def load_integration(source):
         'gc': gc,
         'logger': logging.getLogger('document_transitions_under_test'),
         '_': lambda text: text}
-    methods = {'swap_document', 'reload_document', 'file_list_add_paths', 'file_list_activate',
+    methods = {'cleanup', 'swap_document', 'reload_document', 'file_list_add_paths', 'file_list_activate',
                'file_list_remove', 'file_list_move', 'file_list_clear', 'file_list_load',
                'file_list_next', '_next_file_index', 'file_list_previous', 'goto_page',
                'doc_goto_next', 'doc_goto_prev',
@@ -199,6 +226,7 @@ class DocumentTransitionTests(unittest.TestCase):
         self.dependencies.create.assert_not_called()
         self.dependencies.prepare.assert_not_called()
         ui.file_watcher.watch_file.assert_not_called()
+        ui.doc.close.assert_not_called()
 
     def test_failed_pdf_open_preserves_active_document_and_selection(self):
         ui = self.ui()
@@ -208,6 +236,137 @@ class DocumentTransitionTests(unittest.TestCase):
         self.assertEqual(self.snapshot(ui), before)
         self.assertEqual(ui.file_list_status[ui.file_list.entries[1].id], 'Could not open file')
         ui.cache.swap_document.assert_not_called()
+        ui.doc.close.assert_not_called()
+
+    def test_successful_swap_releases_old_document_after_controls_and_before_image_deletion(self):
+        ui = self.ui()
+        old_doc = ui.doc
+        source_image = self.directory / 'current.png'
+        source_image.write_bytes(b'KEEP ORIGINAL IMAGE')
+        image_pdf = self.directory / 'slide.pdf'
+        image_pdf.write_bytes(b'inert image conversion PDF')
+        old_doc.uri = image_pdf.as_uri()
+        ui.source_uri = source_image.as_uri()
+        new_doc = NativeDocument(self.paths[1].as_uri())
+        self.created[new_doc.uri] = new_doc
+        events = []
+        ui.cache.swap_document.side_effect = lambda doc: events.append(('cache', doc))
+        ui.page_number.setup_doc_callbacks.side_effect = lambda doc: events.append(('page callbacks', doc))
+        ui.deck.setup_doc_callbacks.side_effect = lambda doc: events.append(('deck callbacks', doc))
+        ui.do_page_change.side_effect = lambda **kwargs: events.append(('page change', ui.doc))
+        ui._refresh_file_list.side_effect = lambda: events.append(('list refresh', ui.doc))
+        native_close = old_doc.close.side_effect
+
+        def close_old():
+            self.assertIs(ui.doc, new_doc)
+            self.assertEqual(events, [(name, new_doc) for name in (
+                'cache', 'page callbacks', 'deck callbacks', 'page change', 'list refresh')])
+            native_close()
+        old_doc.close.side_effect = close_old
+
+        def delete_image():
+            if old_doc.doc is not None:
+                raise PermissionError('Simulated Windows lock on the old image PDF.')
+            image_pdf.unlink()
+        previous_image = types.SimpleNamespace(source_path=source_image, uri=image_pdf.as_uri(),
+                                               cleanup=mock.Mock(side_effect=delete_image))
+        ui.image_document = previous_image
+        self.assertTrue(ui.swap_document(new_doc.uri))
+        old_doc.close.assert_called_once_with()
+        old_doc.cleanup_media_files.assert_called_once_with()
+        previous_image.cleanup.assert_called_once_with()
+        self.assertFalse(new_doc.closed)
+        self.assertFalse(image_pdf.exists())
+        self.assertEqual(source_image.read_bytes(), b'KEEP ORIGINAL IMAGE')
+
+    def test_reload_rebinds_real_control_callbacks_before_closing_the_old_document(self):
+        ui = self.ui()
+        old_doc = ui.doc
+        ui.notes_mode = Mode.RIGHT
+        ui.deck.deck_mode = True
+        page_type = extracted_class(SOURCE / 'pympress/editable_label.py', 'PageNumber', {'setup_doc_callbacks'}, {})
+        deck_type = extracted_class(SOURCE / 'pympress/deck.py', 'Overview', {'setup_doc_callbacks'}, {})
+        ui.deck.create_drawing_areas = mock.Mock()
+        ui.page_number.setup_doc_callbacks = lambda doc: page_type.setup_doc_callbacks(ui.page_number, doc)
+        ui.deck.setup_doc_callbacks = lambda doc: deck_type.setup_doc_callbacks(ui.deck, doc)
+        ui.page_number.setup_doc_callbacks(old_doc)
+        ui.deck.setup_doc_callbacks(old_doc)
+        replacement = NativeDocument(ui.source_uri, pages=1, guessed_mode=Mode.BOTTOM)
+        self.created[ui.source_uri] = replacement
+        ui.reload_document()
+        self.assertTrue(old_doc.closed)
+        self.assertIs(ui.page_number.find_label.__self__, replacement)
+        self.assertIs(ui.page_number.label_after.__self__, replacement)
+        self.assertIs(ui.page_number.label_before.__self__, replacement)
+        self.assertIs(ui.deck.pages_number.__self__, replacement)
+        self.assertIs(ui.deck.has_labels.__self__, replacement)
+        self.assertIs(ui.deck.get_last_label_pages.__self__, replacement)
+        self.assertEqual(ui.deck.pages_number(), 1)
+        self.assertEqual((ui.current_page, ui.preview_page), (0, 0))
+        self.assertEqual(ui.notes_mode, Mode.RIGHT)
+        replacement.set_notes_pos.assert_called_once_with('right')
+        replacement.guess_notes.assert_not_called()
+        self.assertTrue(ui.deck.deck_mode)
+        self.assertFalse(ui.talk_time.paused)
+        self.assertEqual(ui.talk_time.resets, 0)
+        ui.file_watcher.watch_file.assert_not_called()
+
+    def test_cleanup_closes_document_before_image_deletion_and_allows_preferences_to_save(self):
+        ui = self.ui()
+        active_doc = ui.doc
+        events = []
+        ui.scribbler.disable_scribbling = mock.Mock(side_effect=lambda: events.append('scribbler'))
+        ui.playback = types.SimpleNamespace(stop=mock.Mock(side_effect=lambda: events.append('playback')))
+        ui.transition = types.SimpleNamespace(cancel=mock.Mock(side_effect=lambda: events.append('transition')))
+        ui.output = types.SimpleNamespace(cleanup=mock.Mock(side_effect=lambda: events.append('output')))
+        ui.output_window = None
+        ui.playback_window = None
+        ui.medias.hide_all = mock.Mock(side_effect=lambda: events.append('media'))
+        ui.next_file_preview = types.SimpleNamespace(cleanup=mock.Mock(side_effect=lambda: events.append('preview')))
+        active_doc.cleanup_media_files.side_effect = lambda: events.append('media files')
+        native_close = active_doc.close.side_effect
+
+        def detach_cache(doc):
+            ui.cache.doc = doc
+            events.append('cache')
+        ui.cache.swap_document.side_effect = detach_cache
+
+        def close_doc():
+            self.assertEqual(events, ['scribbler', 'playback', 'transition', 'output',
+                                      'media', 'preview', 'media files', 'cache'])
+            self.assertIsNot(ui.doc, active_doc)
+            self.assertIs(ui.cache.doc, ui.doc)
+            self.assertIsNone(ui.doc.page(ui.current_page))
+            native_close()
+            events.append('document')
+
+        def delete_image():
+            if active_doc.doc is not None:
+                raise PermissionError('Simulated Windows lock on the active image PDF.')
+            events.append('image')
+        active_doc.close.side_effect = close_doc
+        ui.image_document = types.SimpleNamespace(cleanup=mock.Mock(side_effect=delete_image))
+        application = extracted_class(SOURCE / 'pympress/app.py', 'Pympress', {'do_shutdown'}, {
+            'Gtk': types.SimpleNamespace(Application=types.SimpleNamespace(
+                do_shutdown=mock.Mock(side_effect=lambda app: events.append('shutdown')))),
+            'util': types.SimpleNamespace(close_opened_resources=mock.Mock())})()
+        application.gui = ui
+        application.config = types.SimpleNamespace(
+            save_config=mock.Mock(side_effect=lambda: events.append('preferences')))
+        application.do_shutdown()
+        self.assertEqual(events[-4:], ['document', 'image', 'preferences', 'shutdown'])
+        self.assertTrue(active_doc.closed)
+        self.assertIs(ui.cache.doc, ui.doc)
+        self.assertIsNone(ui.doc.page(ui.current_page))
+        self.assertIsNone(ui.image_document)
+        application.config.save_config.assert_called_once_with()
+        # A harness or shutdown hook may safely request cleanup a second time.
+        ui.cleanup()
+        active_doc.close.assert_called_once_with()
+        ui.output.cleanup.assert_called_once_with()
+        ui.cache.swap_document.assert_called_once_with(ui.doc)
+        self.assertIs(ui.cache.doc, ui.doc)
+        self.assertIsNone(ui.doc.page(ui.current_page))
 
     def test_cancel_does_not_mark_queued_file_as_corrupt(self):
         ui = self.ui()
