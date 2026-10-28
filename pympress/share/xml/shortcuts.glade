@@ -267,7 +267,7 @@
             <child>
               <object class="GtkShortcutsShortcut" id="shortcut_quit">
                 <property name="visible">1</property>
-                <property name="accelerator">q</property>
+                <property name="accelerator">&lt;Primary&gt;q q</property>
                 <property name="title" translatable="yes">Quit</property>
               </object>
             </child>

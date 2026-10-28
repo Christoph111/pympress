@@ -104,33 +104,107 @@ class Pympress(Gtk.Application):
         # GLib.set_prgname('pympress')  # Let prgname be auto-determined from sys.argv[0]
         Gtk.Application.__init__(self, application_id='io.github.pympress',
                                  flags=Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.CAN_OVERRIDE_APP_ID)
+        self._quit_pending = self._quit_started = False
+        self._quit_dialog = None
 
         self.register(None)
 
         if not self.get_is_remote():
             builder.Builder.setup_actions({
                 'log-level': dict(activate=self.set_log_level, state=logger.getEffectiveLevel(), parameter_type=int),
+                'quit-without-confirmation': dict(activate=self._quit_without_confirmation),
             }, action_map=self)
 
         # Connect proper exit function to interrupt
-        signal.signal(signal.SIGINT, self.quit)
+        signal.signal(signal.SIGINT, self._quit_without_confirmation)
 
         for opt in self.options:
             self.add_main_option(opt, *self.options[opt], *self.option_descriptions.get(opt, ['', None]))
 
 
+    def handle_quit_shortcut(self, event):
+        """Consume a primary-modifier Q press before focused controls handle it."""
+        if event.type != Gdk.EventType.KEY_PRESS or event.keyval not in (Gdk.KEY_q, Gdk.KEY_Q):
+            return False
+        primary = Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.META_MASK | Gdk.ModifierType.SUPER_MASK
+        state = event.state
+        if util.IS_MAC_OS:
+            keymap = Gdk.Keymap.get_default()
+            if keymap is not None:
+                state = keymap.add_virtual_modifiers(state)
+                command = keymap.add_virtual_modifiers(Gdk.ModifierType.MOD2_MASK)
+                if command & Gdk.ModifierType.META_MASK:
+                    state &= ~Gdk.ModifierType.MOD2_MASK
+        state &= Gtk.accelerator_get_default_mod_mask()
+        if state & primary and not state & ~primary:
+            self.quit()
+            return True
+        return False
+
+
     def quit(self, *args):  # noqa: A003 -- we need to override app.quit()
-        """ Quit and ignore other arguments e.g. sent by signals.
-        """
-        if self.gui is not None:
+        """Request interactive exit, consuming window deletion when cancelled."""
+        return self._request_quit(confirm=True)
 
-            if self.gui.unsaved_changes():
-                return
 
-            # before quitting, re-enable the screensaver
-            self.gui.set_screensaver(False)
+    def _quit_without_confirmation(self, *args):
+        """Keep CLI and SIGINT exit non-interactive except for unsaved work."""
+        return self._request_quit(confirm=False)
 
-        Gtk.Application.quit(self)
+
+    def _request_quit(self, confirm):
+        """Run one exit request while preserving unsaved-document protection."""
+        if self._quit_started:
+            return False
+        if self._quit_pending:
+            if self._quit_dialog is not None:
+                self._quit_dialog.present()
+            return True
+        self._quit_pending = True
+        try:
+            if self.gui is not None:
+                if confirm and not self._confirm_quit():
+                    return True
+                if self.gui.unsaved_changes():
+                    return True
+                self.gui.set_screensaver(False)
+            self._quit_started = True
+            try:
+                Gtk.Application.quit(self)
+            except Exception:
+                self._quit_started = False
+                raise
+            return False
+        finally:
+            self._quit_pending = False
+
+
+    def _confirm_quit(self):
+        """Ask before closing the presentation, with a conservative default."""
+        dialog = Gtk.MessageDialog(transient_for=self.gui.p_win,
+                                   flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+                                   message_type=Gtk.MessageType.QUESTION, text=_('Quit Pympress?'))
+        dialog.format_secondary_text(_('The presentation and all Pympress windows will close.\n'
+                                       'Press Enter to quit, or Space or Escape to cancel.'))
+        dialog.add_buttons(_('Cancel'), Gtk.ResponseType.CANCEL, _('OK'), Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        dialog.connect('key-press-event', self._on_quit_confirmation_key)
+        self._quit_dialog = dialog
+        try:
+            return dialog.run() == Gtk.ResponseType.OK
+        finally:
+            self._quit_dialog = None
+            dialog.destroy()
+
+
+    def _on_quit_confirmation_key(self, dialog, event):
+        """Handle explicit quit keys before GTK activates a focused button."""
+        if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            dialog.response(Gtk.ResponseType.OK)
+            return True
+        if event.keyval in (Gdk.KEY_space, Gdk.KEY_KP_Space, Gdk.KEY_Escape):
+            dialog.response(Gtk.ResponseType.CANCEL)
+            return True
         return False
 
 
@@ -277,7 +351,7 @@ class Pympress(Gtk.Application):
             'next': 'next-page',
             'prev': 'prev-page',
             'blank': 'blank-screen',
-            'quit': 'quit',
+            'quit': 'quit-without-confirmation',
             'first': 'first-page',
             'last': 'last-page',
         }

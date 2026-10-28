@@ -341,6 +341,7 @@ class UI(builder.Builder):
 
         # Keep the explicitly requested presentation keys available with old user configs.
         for action, keys in {
+            'quit': ['<Primary>q', '<Meta>q'],
             'show-file-list': ['<Shift>l', '<Primary><Shift>l', '<Control><Shift>l'],
             'next-file': ['<Primary>Right', '<Primary>Down', '<Meta>Right', '<Meta>Down'],
             'previous-file': ['<Primary>Left', '<Primary>Up', '<Meta>Left', '<Meta>Up'],
@@ -1988,6 +1989,9 @@ class UI(builder.Builder):
             widget (:class:`~Gtk.Widget`):  the widget which has received the key stroke
             event (:class:`~Gdk.Event`):  the GTK event, which contains the key stroke details
         """
+        quit_shortcut = getattr(getattr(self, 'app', None), 'handle_quit_shortcut', None)
+        if quit_shortcut is not None and quit_shortcut(event):
+            return True
         view = getattr(self, 'file_list_window', None)
         dock = getattr(view, '_dock', None)
         if widget is self.p_win and dock is not None and dock.docked and dock.has_focus():

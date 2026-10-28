@@ -45,6 +45,7 @@ GDK = SimpleNamespace(KEY_Tab=1, KEY_ISO_Left_Tab=2, KEY_Escape=3, KEY_Return=4,
                       KEY_Delete=6, KEY_BackSpace=7, KEY_Up=8, KEY_Down=9,
                       KEY_v=ord('v'), KEY_V=ord('V'), KEY_space=ord(' '),
                       KEY_d=ord('d'), KEY_D=ord('D'),
+                      KEY_q=ord('q'), KEY_Q=ord('Q'),
                       KEY_l=ord('l'), KEY_L=ord('L'), KEY_Left=10, KEY_Right=11,
                       ModifierType=SimpleNamespace(SHIFT_MASK=1, MOD1_MASK=2, CONTROL_MASK=4,
                                                    META_MASK=8, SUPER_MASK=16))
@@ -138,7 +139,9 @@ class FileListWindowTests(unittest.TestCase):
             path.write_bytes(b'fixture')
         model = FileList()
         model.append(files)
-        self.ui = SimpleNamespace(file_list=model, file_list_status={})
+        self.ui = SimpleNamespace(file_list=model, file_list_status={},
+                                  app=SimpleNamespace(quit=mock.Mock(),
+                                                      handle_quit_shortcut=mock.Mock(return_value=False)))
         self.ui.file_list_move = lambda index, delta: model.move(index, index + delta)
         self.ui.file_list_activate = lambda index: model.set_current(index)
         self.ui.file_list_remove = lambda indices: [model.remove(index) for index in reversed(indices)]
@@ -168,6 +171,53 @@ class FileListWindowTests(unittest.TestCase):
 
     def selected_ids(self):
         return [self.window.store[index][self.window.ID] for index in self.window._selected_indices()]
+
+    def test_primary_q_requests_shared_quit_from_both_hosts_and_text_fields(self):
+        original = self.ui.file_list.entries
+        self.ui.app.handle_quit_shortcut.return_value = True
+        self.window.propagate_key_event = mock.Mock()
+        for docked in (False, True):
+            self.window._dock = SimpleNamespace(docked=docked)
+            for focused in (None, GTK.Entry(), GTK.TextView()):
+                self.window.get_focus = lambda: focused
+                for key in (GDK.KEY_q, GDK.KEY_Q):
+                    for modifier in (GDK.ModifierType.CONTROL_MASK, GDK.ModifierType.META_MASK,
+                                     GDK.ModifierType.SUPER_MASK):
+                        with self.subTest(docked=docked, focused=type(focused).__name__, key=key, modifier=modifier):
+                            self.ui.app.handle_quit_shortcut.reset_mock()
+                            event = SimpleNamespace(keyval=key, state=modifier)
+                            self.assertTrue(self.window._on_key_press(self.window, event))
+                            self.ui.app.handle_quit_shortcut.assert_called_once_with(event)
+        self.window.propagate_key_event.assert_not_called()
+        self.ui.app.quit.assert_not_called()
+        self.assertEqual(self.ui.file_list.entries, original)
+
+    def test_plain_q_and_additional_modifiers_stay_local_while_typing(self):
+        self.window.get_focus = lambda: GTK.Entry()
+        self.window.propagate_key_event = mock.Mock(return_value=True)
+        for key in (GDK.KEY_q, GDK.KEY_Q):
+            for state in (0, GDK.ModifierType.SHIFT_MASK, GDK.ModifierType.MOD1_MASK,
+                          GDK.ModifierType.META_MASK | GDK.ModifierType.SHIFT_MASK,
+                          GDK.ModifierType.META_MASK | GDK.ModifierType.MOD1_MASK):
+                with self.subTest(key=key, state=state):
+                    event = SimpleNamespace(keyval=key, state=state)
+                    self.assertTrue(self.window._on_key_press(self.window, event))
+                    self.assertIs(self.window.propagate_key_event.call_args.args[0], event)
+        self.ui.app.quit.assert_not_called()
+
+    def test_primary_q_reaches_shared_quit_from_local_file_chooser(self):
+        self.ui.app.handle_quit_shortcut.return_value = True
+        dialog = SimpleNamespace(get_focus=lambda: self.fail('Quit must bypass chooser editing'))
+        event = SimpleNamespace(keyval=GDK.KEY_q, state=GDK.ModifierType.META_MASK)
+        self.assertTrue(self.window._on_dialog_key_press(dialog, event))
+        self.ui.app.handle_quit_shortcut.assert_called_once_with(event)
+        self.ui.app.quit.assert_not_called()
+
+    def test_q_key_release_does_not_request_quit_again(self):
+        event = SimpleNamespace(keyval=GDK.KEY_q, state=GDK.ModifierType.META_MASK)
+        self.assertFalse(self.window._on_key_release(self.window, event))
+        self.ui.app.quit.assert_not_called()
+        self.ui.app.handle_quit_shortcut.assert_not_called()
 
     def test_default_checkbox_updates_inheriting_rows_without_changing_overrides(self):
         model = self.ui.file_list

@@ -1771,3 +1771,14 @@ msgstr ""
 msgid "Use the global next-file setting for the selected files"
 msgstr ""
 
+msgid "OK"
+msgstr ""
+
+msgid "Quit Pympress?"
+msgstr ""
+
+msgid ""
+"The presentation and all Pympress windows will close.\n"
+"Press Enter to quit, or Space or Escape to cancel."
+msgstr ""
+

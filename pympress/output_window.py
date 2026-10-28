@@ -165,6 +165,8 @@ class OutputWindow(Gtk.ApplicationWindow):
 
     def _on_key_press(self, _window, event):
         """Keep settings keys local and close only this window on Escape."""
+        if FileListWindow._quit_shortcut(self.ui.app, event):
+            return True
         if event.keyval == Gdk.KEY_Escape:
             self.hide()
             return True

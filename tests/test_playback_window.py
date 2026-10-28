@@ -20,6 +20,7 @@ from unittest import mock
 
 from pympress.filelist import FileList, FileListError, MAX_PAGE_OVERRIDES, validate_slide_seconds
 from pympress.playback import PlaybackController
+from test_filelist_window import FileListWindow as SharedFileListWindow
 
 SOURCE = _support.SOURCE
 
@@ -86,9 +87,13 @@ class Selection:
 
 GTK = SimpleNamespace(ApplicationWindow=BaseWindow, Button=Widget,
                       TreePath=SimpleNamespace(new_from_indices=lambda indices: indices))
-GDK = SimpleNamespace(KEY_Escape=1, KEY_Return=2, KEY_KP_Enter=3, KEY_space=4)
+GDK = SimpleNamespace(KEY_Escape=1, KEY_Return=2, KEY_KP_Enter=3, KEY_space=4,
+                      KEY_q=ord('q'), KEY_Q=ord('Q'),
+                      ModifierType=SimpleNamespace(SHIFT_MASK=1, MOD1_MASK=2, CONTROL_MASK=4,
+                                                   META_MASK=8, SUPER_MASK=16))
 GLIB = SimpleNamespace(source_remove=mock.Mock(), timeout_add=mock.Mock(return_value=99))
-FILE_WINDOW = SimpleNamespace(_local_key=mock.Mock(return_value=True))
+FILE_WINDOW = SimpleNamespace(_local_key=mock.Mock(return_value=True),
+                              _quit_shortcut=SharedFileListWindow._quit_shortcut)
 source = SOURCE / 'pympress/playback_window.py'
 nodes = [node for node in ast.parse(source.read_text(encoding='utf-8')).body if isinstance(node, ast.ClassDef)]
 namespace = dict(Gtk=GTK, Gdk=GDK, GLib=GLIB, FileListWindow=FILE_WINDOW,
@@ -111,7 +116,9 @@ class PlaybackWindowTests(unittest.TestCase):
         self.ui = SimpleNamespace(file_list=files, playback=self.player, current_page=1,
                                   doc=SimpleNamespace(pages_number=lambda: 3),
                                   file_list_error=mock.Mock(), playback_settings_changed=mock.Mock(),
-                                  playback_toggle=mock.Mock(), playback_stop=mock.Mock())
+                                  playback_toggle=mock.Mock(), playback_stop=mock.Mock(),
+                                  app=SimpleNamespace(quit=mock.Mock(),
+                                                      handle_quit_shortcut=mock.Mock(return_value=False)))
         self.window = PlaybackWindow.__new__(PlaybackWindow)
         self.window.ui = self.ui
         self.window._refreshing = False
@@ -139,6 +146,33 @@ class PlaybackWindowTests(unittest.TestCase):
     def tearDown(self):
         self.window.cleanup()
         self.directory.cleanup()
+
+    def test_primary_q_requests_shared_quit_before_local_draft_editing(self):
+        self.ui.app.handle_quit_shortcut.return_value = True
+        self.window.default_seconds.set_value(17)
+        self.window._mark_dirty()
+        self.window.get_focus = lambda: self.window.default_seconds
+        for key in (GDK.KEY_q, GDK.KEY_Q):
+            for modifier in (GDK.ModifierType.CONTROL_MASK, GDK.ModifierType.META_MASK,
+                             GDK.ModifierType.SUPER_MASK):
+                with self.subTest(key=key, modifier=modifier):
+                    self.ui.app.handle_quit_shortcut.reset_mock()
+                    event = SimpleNamespace(keyval=key, state=modifier)
+                    self.assertTrue(self.window._on_key_press(self.window, event))
+                    self.ui.app.handle_quit_shortcut.assert_called_once_with(event)
+        FILE_WINDOW._local_key.assert_not_called()
+        self.ui.app.quit.assert_not_called()
+        self.assertEqual(self.window.default_seconds.get_value(), 17)
+        self.assertTrue(self.window._dirty)
+
+    def test_plain_q_and_modified_variants_remain_local(self):
+        for state in (0, GDK.ModifierType.SHIFT_MASK, GDK.ModifierType.MOD1_MASK,
+                      GDK.ModifierType.META_MASK | GDK.ModifierType.SHIFT_MASK,
+                      GDK.ModifierType.META_MASK | GDK.ModifierType.MOD1_MASK):
+            event = SimpleNamespace(keyval=GDK.KEY_q, state=state)
+            self.assertTrue(self.window._on_key_press(self.window, event))
+            FILE_WINDOW._local_key.assert_called_with(self.window, event)
+        self.ui.app.quit.assert_not_called()
 
     def test_refresh_displays_defaults_and_existing_page_overrides(self):
         self.assertEqual(self.window.filename.text, 'Slides.pdf')

@@ -13,6 +13,7 @@ import math
 from types import SimpleNamespace
 import unittest
 from unittest import mock
+from test_filelist_window import FileListWindow as SharedFileListWindow
 
 SOURCE = _support.SOURCE
 
@@ -56,8 +57,12 @@ class Widget:
 
 
 GTK = SimpleNamespace(ApplicationWindow=BaseWindow, Button=Widget)
-GDK = SimpleNamespace(KEY_Escape=1, KEY_Return=2, KEY_KP_Enter=3, KEY_space=4)
-FILE_WINDOW = SimpleNamespace(_local_key=mock.Mock(return_value=True))
+GDK = SimpleNamespace(KEY_Escape=1, KEY_Return=2, KEY_KP_Enter=3, KEY_space=4,
+                      KEY_q=ord('q'), KEY_Q=ord('Q'),
+                      ModifierType=SimpleNamespace(SHIFT_MASK=1, MOD1_MASK=2, CONTROL_MASK=4,
+                                                   META_MASK=8, SUPER_MASK=16))
+FILE_WINDOW = SimpleNamespace(_local_key=mock.Mock(return_value=True),
+                              _quit_shortcut=SharedFileListWindow._quit_shortcut)
 source = SOURCE / 'pympress/output_window.py'
 classes = [node for node in ast.parse(source.read_text(encoding='utf-8')).body if isinstance(node, ast.ClassDef)]
 namespace = dict(Gtk=GTK, Gdk=GDK, FileListWindow=FILE_WINDOW, math=math)
@@ -73,7 +78,9 @@ class OutputWindowTests(unittest.TestCase):
             monitors=mock.Mock(return_value=[dict(index=0, label='Built-in display'),
                                              dict(index=1, label='Projector')]),
             apply=mock.Mock(), show=mock.Mock(), hide=mock.Mock(), toggle=mock.Mock())
-        self.ui = SimpleNamespace(output=self.output, file_list_error=mock.Mock())
+        self.ui = SimpleNamespace(output=self.output, file_list_error=mock.Mock(),
+                                  app=SimpleNamespace(quit=mock.Mock(),
+                                                      handle_quit_shortcut=mock.Mock(return_value=False)))
         self.window = OutputWindow.__new__(OutputWindow)
         self.window.ui, self.window._refreshing, self.window.visible = self.ui, False, False
         for name in ('mode', 'monitor', 'fade_adjustment', 'fade_spin', 'fade_scale',
@@ -82,6 +89,33 @@ class OutputWindowTests(unittest.TestCase):
         self.window.get_focus = lambda: None
         FILE_WINDOW._local_key.reset_mock()
         self.window.refresh()
+
+    def test_primary_q_requests_shared_quit_before_local_output_editing(self):
+        self.ui.app.handle_quit_shortcut.return_value = True
+        self.window.fade_adjustment.value = 2.5
+        self.window.get_focus = lambda: self.window.fade_spin
+        for key in (GDK.KEY_q, GDK.KEY_Q):
+            for modifier in (GDK.ModifierType.CONTROL_MASK, GDK.ModifierType.META_MASK,
+                             GDK.ModifierType.SUPER_MASK):
+                with self.subTest(key=key, modifier=modifier):
+                    self.ui.app.handle_quit_shortcut.reset_mock()
+                    event = SimpleNamespace(keyval=key, state=modifier)
+                    self.assertTrue(self.window._on_key_press(self.window, event))
+                    self.ui.app.handle_quit_shortcut.assert_called_once_with(event)
+        FILE_WINDOW._local_key.assert_not_called()
+        self.ui.app.quit.assert_not_called()
+        self.assertEqual(self.window.fade_adjustment.value, 2.5)
+        self.output.hide.assert_not_called()
+        self.output.apply.assert_not_called()
+
+    def test_plain_q_and_modified_variants_remain_local(self):
+        for state in (0, GDK.ModifierType.SHIFT_MASK, GDK.ModifierType.MOD1_MASK,
+                      GDK.ModifierType.META_MASK | GDK.ModifierType.SHIFT_MASK,
+                      GDK.ModifierType.META_MASK | GDK.ModifierType.MOD1_MASK):
+            event = SimpleNamespace(keyval=GDK.KEY_q, state=state)
+            self.assertTrue(self.window._on_key_press(self.window, event))
+            FILE_WINDOW._local_key.assert_called_with(self.window, event)
+        self.ui.app.quit.assert_not_called()
 
     def test_refresh_loads_stable_display_ids_and_settings(self):
         self.assertEqual(self.window.monitor.options, [('0', 'Built-in display'), ('1', 'Projector')])

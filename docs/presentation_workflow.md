@@ -15,6 +15,7 @@ The presentation shortcuts in this table apply when the **Presenter** or **Conte
 | Toggle the persistent laser pointer | **L** |
 | Next file | **Primary+Right** or **Primary+Down**; **Alt+PageDown** is also available. |
 | Previous file | **Primary+Left** or **Primary+Up**; **Alt+PageUp** is also available. |
+| Quit with confirmation | **Primary+Q**; **Q** is also available in presentation windows. |
 | Open playback controls | **Playback** in the toolbar, or **Primary+Shift+P** |
 | Start, pause, or resume automatic playback | **F8** |
 | Stop automatic playback | **F9** |
@@ -28,6 +29,13 @@ On keyboards where function keys control media or system functions, hold **Fn** 
 In the **file list**, **Shift+L** hides the window, **L** toggles the laser, and **Primary+Left/Up** or **Primary+Right/Down** changes files. These navigation and laser shortcuts leave focused text inputs alone. **Primary+V** pastes files or file paths. Use the Presenter or Content window for F8, F9, P, and other presentation shortcuts.
 
 In the **file list** and **Playback** windows, **Escape** only hides that management window; playback and fullscreen remain unchanged. In a file chooser, Escape cancels the chooser.
+
+**Primary+Q**, **File → Quit**, and closing a presentation window ask **Quit Pympress?**
+Press **Enter** to confirm. **Space** or **Escape** cancels, even when the OK button
+has focus. The dialog defaults to **Cancel**. Primary+Q also works while editing in
+the file list, Playback, Output, or a file chooser. Any unsaved PDF changes are still
+handled after confirming. Command-line **--quit** and SIGINT retain their existing
+unsaved-work checks without this additional confirmation.
 
 When the persistent laser is off, manual pointing remains available. Hold the left mouse button and move over the **current-slide preview** in the Presenter window; the corresponding position appears in the Content window. Releasing the button, leaving the preview, losing focus, or changing files hides the manual pointer. In the Content window, use **Ctrl+left mouse button** for manual pointing. Ordinary clicks on PDF links remain available.
 

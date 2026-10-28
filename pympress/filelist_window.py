@@ -402,8 +402,16 @@ class FileListWindow(Gtk.ApplicationWindow):
             window.child_focus(Gtk.DirectionType.TAB_BACKWARD if backwards else Gtk.DirectionType.TAB_FORWARD)
         return True
 
+    @staticmethod
+    def _quit_shortcut(app, event):
+        """Route Primary+Q to application confirmation before local key handling."""
+        handler = getattr(app, 'handle_quit_shortcut', None)
+        return bool(handler and handler(event))
+
     def _on_key_press(self, _window, event):
         """Handle list shortcuts without triggering unrelated presentation actions."""
+        if self._quit_shortcut(self.ui.app, event):
+            return True
         if event.keyval == Gdk.KEY_Escape:
             self.hide()
             return True
@@ -446,6 +454,8 @@ class FileListWindow(Gtk.ApplicationWindow):
 
     def _on_dialog_key_press(self, dialog, event):
         """Preserve local chooser editing, button activation, and cancellation."""
+        if self._quit_shortcut(self.ui.app, event):
+            return True
         if event.keyval == Gdk.KEY_Escape:
             dialog.response(Gtk.ResponseType.CANCEL)
             return True

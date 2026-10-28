@@ -565,6 +565,9 @@ msgstr ""
 msgid "Now showing"
 msgstr ""
 
+msgid "OK"
+msgstr ""
+
 msgid "Only absolute HTTP and HTTPS links are allowed in this local build."
 msgstr ""
 
@@ -771,6 +774,9 @@ msgid "Python version {}"
 msgstr ""
 
 msgid "Quit"
+msgstr ""
+
+msgid "Quit Pympress?"
 msgstr ""
 
 msgid "Redo highlight stroke"
@@ -1012,6 +1018,11 @@ msgid "The page number is invalid."
 msgstr ""
 
 msgid "The per-page timing settings are invalid or too large."
+msgstr ""
+
+msgid ""
+"The presentation and all Pympress windows will close.\n"
+"Press Enter to quit, or Space or Escape to cancel."
 msgstr ""
 
 msgid "The saved output display is unavailable. Choose a display in Output settings."
