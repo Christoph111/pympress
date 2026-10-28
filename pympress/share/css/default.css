@@ -112,6 +112,32 @@
 .pympress-file-list label {
     color: #dce5ed;
 }
+/* Menu popups can have their own toplevel; keep their surface and text paired. */
+.pympress-console menubar,
+menu {
+    background-image: none;
+    background-color: #1c2835;
+    color: #dce5ed;
+}
+.pympress-console menubar menuitem,
+menu menuitem {
+    background-image: none;
+    background-color: transparent;
+    color: #dce5ed;
+}
+.pympress-console menuitem label,
+menu menuitem label {
+    color: inherit;
+}
+.pympress-console menubar menuitem:hover,
+menu menuitem:hover {
+    background-color: #365967;
+    color: #fff;
+}
+.pympress-console menubar menuitem:disabled,
+menu menuitem:disabled {
+    color: #7b8897;
+}
 .pympress-console .presenter-controls {
     background-color: #101720;
     border-bottom: 1px solid #34414f;
