@@ -334,20 +334,7 @@ class UI(builder.Builder):
             window.connect('focus-out-event', self.laser.cancel_manual_pointer)
             window.connect('unmap', self.laser.cancel_manual_pointer)
 
-        for action, shortcut_list in self.config.shortcuts.items():
-            if action == 'highlight-hold-to-erase':
-                continue  # Not really an action but we define a shortcut for it
-            self.app.set_accels_for_action('app.' + action, shortcut_list)
-
-        # Keep the explicitly requested presentation keys available with old user configs.
-        for action, keys in {
-            'quit': ['<Primary>q', '<Meta>q'],
-            'show-file-list': ['<Shift>l', '<Primary><Shift>l', '<Control><Shift>l'],
-            'next-file': ['<Primary>Right', '<Primary>Down', '<Meta>Right', '<Meta>Down'],
-            'previous-file': ['<Primary>Left', '<Primary>Up', '<Meta>Left', '<Meta>Up'],
-        }.items():
-            self.app.set_accels_for_action('app.' + action,
-                                           list(dict.fromkeys(self.config.shortcuts.get(action, []) + keys)))
+        self.register_shortcuts()
 
         # Common to both windows
         self.load_icons()
@@ -396,6 +383,38 @@ class UI(builder.Builder):
 
         if type(screen).__name__ == 'GdkWaylandScreen':
             GLib.timeout_add(100, self.setup_screens, screen, 'delayed startup')
+
+
+    def register_shortcuts(self):
+        """Register shortcuts with exclusive ownership of mandatory file arrows.
+
+        Primary arrows overlap the original Control label shortcuts on Windows
+        and Linux. GTK allows several actions for one accelerator, so adding the
+        file actions last does not resolve that collision. Compare parsed keys
+        to retain macOS Control arrows and unrelated custom bindings, without
+        changing the user's saved configuration.
+        """
+        required = {
+            'quit': ['<Primary>q', '<Meta>q'],
+            'show-file-list': ['<Shift>l', '<Primary><Shift>l', '<Control><Shift>l'],
+            'next-file': ['<Primary>Right', '<Primary>Down', '<Meta>Right', '<Meta>Down'],
+            'previous-file': ['<Primary>Left', '<Primary>Up', '<Meta>Left', '<Meta>Up'],
+        }
+        shortcuts = {action: list(keys) for action, keys in self.config.shortcuts.items()
+                     if action != 'highlight-hold-to-erase'}
+        # Keep the explicitly requested presentation keys available with old user configs.
+        for action, keys in required.items():
+            shortcuts[action] = list(dict.fromkeys(shortcuts.get(action, []) + keys))
+        reserved = {tuple(Gtk.accelerator_parse(key)): action
+                    for action in ('next-file', 'previous-file') for key in required[action]}
+        for action, keys in shortcuts.items():
+            resolved, seen = [], set()
+            for key in keys:
+                parsed = tuple(Gtk.accelerator_parse(key))
+                if parsed not in seen and reserved.get(parsed, action) == action:
+                    resolved.append(key)
+                    seen.add(parsed)
+            self.app.set_accels_for_action('app.' + action, resolved)
 
 
     def load_icons(self):
