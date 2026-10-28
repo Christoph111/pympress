@@ -80,14 +80,20 @@ class Integration(unittest.TestCase):
         self.ui.save_file_as.assert_called_once()
         self.ui.doc.save_changes.assert_not_called()
 
-    def test_image_rejects_source_alias_nonlocal_and_non_pdf_exports(self):
-        alias = self.root / 'alias.pdf'
-        alias.symlink_to(self.image)
+    def test_image_rejects_source_nonlocal_and_non_pdf_exports(self):
         original = self.image.read_bytes()
-        for uri in [self.image.as_uri(), alias.as_uri(), (self.root / 'other.png').as_uri(),
+        for uri in [self.image.as_uri(), (self.root / 'other.png').as_uri(),
                     'https://example.test/export.pdf', 'file://remote/tmp/export.pdf']:
             with self.subTest(uri=uri):
                 self.assertFalse(self.ui._save_document(uri))
+        self.ui.doc.save_changes.assert_not_called()
+        self.assertEqual(self.image.read_bytes(), original)
+
+    def test_image_rejects_a_source_symlink_alias(self):
+        alias = self.root / 'alias.pdf'
+        _support.symlink_or_skip(self, alias, self.image)
+        original = self.image.read_bytes()
+        self.assertFalse(self.ui._save_document(alias.as_uri()))
         self.ui.doc.save_changes.assert_not_called()
         self.assertEqual(self.image.read_bytes(), original)
 

@@ -5,6 +5,7 @@ establish placement over a fullscreen video or behavior across macOS Spaces.
 """
 
 import ctypes
+import posixpath
 import sys
 import threading
 import types
@@ -282,6 +283,7 @@ class BridgeSignatures(unittest.TestCase):
         library = types.SimpleNamespace(gdk_quartz_window_get_nswindow=mock.Mock())
         with mock.patch.object(macos_overlay.os, 'RTLD_NOLOAD', 16, create=True), \
                 mock.patch.object(macos_overlay.os, 'RTLD_LAZY', 1, create=True), \
+                mock.patch.object(macos_overlay.os.path, 'isabs', side_effect=posixpath.isabs), \
                 mock.patch.object(macos_overlay.ctypes, 'CDLL', return_value=library) as loader:
             self.assertIs(macos_overlay._loaded_gdk(process), library)
         loader.assert_called_once_with('/bundle/libgdk-3.0.dylib', mode=17)

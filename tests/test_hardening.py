@@ -260,7 +260,7 @@ class HardeningTests(unittest.TestCase):
 
     def test_symlink_save_preserves_link_and_updates_target(self):
         link = self.input_dir / 'alias.pdf'
-        link.symlink_to(self.input.name)
+        _support.symlink_or_skip(self, link, self.input.name)
         with working_directory(self.cwd):
             doc, native = self.document(link.as_uri())
             doc.changes = True
@@ -301,7 +301,7 @@ class HardeningTests(unittest.TestCase):
 
     def test_save_as_symlink_alias_updates_target_and_preserves_link(self):
         alias = self.input_dir / 'save-as-alias.pdf'
-        alias.symlink_to(self.input.name)
+        _support.symlink_or_skip(self, alias, self.input.name)
         with working_directory(self.cwd):
             doc, native = self.document()
             doc.changes = True

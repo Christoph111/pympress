@@ -29,7 +29,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   portable-models:
-    name: Portable models (${{ matrix.os }})
+    name: Cross-platform regressions (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -40,8 +40,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Run file-reference, playback, and output controller tests
-        run: python -m unittest tests.test_filelist.Files tests.test_playback tests.test_output -v
+      - name: Run the complete portable regression suite
+        run: python -m unittest discover -s tests -v
 
   localization:
     name: Localization and format placeholders
