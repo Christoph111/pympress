@@ -88,7 +88,7 @@ def get_pympress_meta():
         if count != '0' or dirty:
             info['version'] = '{}+{}@{}'.format(tag.lstrip('v'), count, sha.lstrip('g'))
 
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         logger.debug('Failed to get git describe output', exc_info = True)
 
     return info
